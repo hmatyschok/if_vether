@@ -1,0 +1,12 @@
+--- files.orig	2016-03-25 02:09:25.000000000 +0100
++++ files	2016-07-22 18:27:08.061251000 +0200
+@@ -4106,3 +4106,9 @@
+ xdr/xdr_mem.c			optional krpc | nfslockd | nfsclient | nfsserver | nfscl | nfsd
+ xdr/xdr_reference.c		optional krpc | nfslockd | nfsclient | nfsserver | nfscl | nfsd
+ xdr/xdr_sizeof.c		optional krpc | nfslockd | nfsclient | nfsserver | nfscl | nfsd
++
++#
++# if_vether(4)
++#
++net/if_vether.c 	optional if_vether inet
++
