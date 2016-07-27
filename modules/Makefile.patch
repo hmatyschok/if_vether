@@ -1,0 +1,10 @@
+--- sys/modules/Makefile.orig	2016-03-25 02:09:40.000000000 +0100
++++ sys/modules/Makefile	2016-07-27 22:33:54.656354000 +0200
+@@ -149,6 +149,7 @@
+ 	if_stf \
+ 	if_tap \
+ 	if_tun \
++    if_vether \
+ 	if_vlan \
+ 	if_vxlan \
+ 	${_igb} \
