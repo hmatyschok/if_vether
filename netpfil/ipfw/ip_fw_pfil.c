@@ -60,9 +60,6 @@ __FBSDID("$FreeBSD: releng/10.1/sys/netpfil/ipfw/ip_fw_pfil.c 264813 2014-04-23 
 #error IPFIREWALL requires INET.
 #endif /* INET */
 
-#include "opt_mpls.h"
-#include "opt_mpls_debug.h"
-
 #include "opt_pppoe_pfil.h"
 
 #include <sys/param.h>
@@ -91,10 +88,7 @@ __FBSDID("$FreeBSD: releng/10.1/sys/netpfil/ipfw/ip_fw_pfil.c 264813 2014-04-23 
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
 #endif
-
-#ifdef MPLS
-#include <netmpls/mpls.h>
-#endif /* MPLS */	
+	
 #ifdef PPPOE_PFIL
 #include <net/if_bridgevar.h>
 #endif /* PPPOE_PFIL */
@@ -333,17 +327,11 @@ again:
 static int
 ipfw_check_frame(void *arg, struct mbuf **m0, struct ifnet *dst, int dir0,
     struct inpcb *inp)
-{
-#if defined(MPLS) || defined(PPPOE_PFIL)
-#ifdef MPLS
-	struct m_tag_mpls *mtm;
-	size_t nstk;
-#endif /* MPLS */	
+{	
 #ifdef PPPOE_PFIL
  	struct m_tag_pppoe *mtp;
-#endif /* PPPOE_PFIL */	
 	u_int16_t ether_type;
-#endif
+#endif /* PPPOE_PFIL */
 	struct ether_header *eh;
 	struct ether_header save_eh;
 	struct mbuf *m;
@@ -386,66 +374,13 @@ ipfw_check_frame(void *arg, struct mbuf **m0, struct ifnet *dst, int dir0,
 	save_eh = *eh;			/* save copy for restore below */
 	m_adj(m, ETHER_HDR_LEN);	/* strip ethernet header */
 
-#if defined(MPLS) || defined(PPPOE_PFIL)
-	ether_type = ntohs(save_eh.ether_type);
-	i = IP_FW_PASS;
-/*
- * Cache pci of sdu.
- */
-	switch (ether_type) {
-#ifdef MPLS
-	case ETHERTYPE_MPLS:
-/*
- * Strip off MPLS label stack and keep a copy.
- */
-		mtm = (struct m_tag_mpls *)
-			m_tag_alloc(MTAG_MPLS, MTAG_MPLS_STACK, 
-				sizeof(struct m_tag_mpls), M_NOWAIT);
- 		if (mtm == NULL) {
- 			error = ENOBUFS;
- 			goto bad;
- 		}
- 		
-		for (nstk = 0; nstk < MPLS_INKERNEL_LOOP_MAX; nstk++) {
-			if (m->m_len < MPLS_HDRLEN) {
-				m = m_pullup(m, MPLS_HDRLEN);
-				if (m == NULL) {
- 					error = ENOBUFS;
- 					goto bad;
- 				}
-			}
-			mtm->mtm_stk[nstk] = *mtod(m, struct shim_hdr *);
-			m_adj(m, MPLS_HDRLEN);
-			if (MPLS_BOS(mtm->mtm_stk[nstk].shim_label))
-				break;
-		}
-		mtm->mtm_size = (nstk + 1) * MPLS_HDRLEN;
-/*
- * Annotate mbuf(9).
- */
-	 	m_tag_prepend(m, &mtm->mtm_tag);		
-/*
- * Relabel protocol id, as precondition for parsing by ipfw_chk.
- */	
-		switch (*mtod(m, u_char *) >> 4) {
-		case IPVERSION:
-			save_eh.ether_type = htons(ETHERTYPE_IP);
-			break;				
-#ifdef INET6
-		case IPV6_VERSION >> 4:
-			save_eh.ether_type = htons(ETHERTYPE_IPV6);
-			break;
-#endif /* INET6 */
-		default:
-/*
- * Bypass filtering, if sdu is not in AF_INET[6].
- */			
-			goto done;
-		}			
-		break;	
-#endif /* MPLS */
 #ifdef PPPOE_PFIL
-	case ETHERTYPE_PPPOE:
+	ether_type = ntohs(save_eh.ether_type);
+    i = IP_FW_PASS;
+/*
+ * Cache rfc-2516 pci of sdu.
+ */
+	if (ether_type == ETHERTYPE_PPPOE) {
 /*
  * Backup and strip off rfc-2516 and rfc-1661 pci.
  */	
@@ -482,13 +417,9 @@ ipfw_check_frame(void *arg, struct mbuf **m0, struct ifnet *dst, int dir0,
  * Bypass filtering, if sdu is not in AF_INET[6].
  */		
 			goto done;
-		}	
-		break;	
+		}			
+	} 					
 #endif /* PPPOE_PFIL */	
-	default:
-		break;		
-	}					
-#endif
 
 	args.m = m;		/* the packet we are looking at		*/
 	args.oif = dir == PFIL_OUT ? dst: NULL;	/* destination, if any	*/
@@ -505,28 +436,12 @@ ipfw_check_frame(void *arg, struct mbuf **m0, struct ifnet *dst, int dir0,
 	if (m == NULL) 
 		goto out;
 
-#if defined(MPLS) || defined(PPPOE_PFIL)
+#ifdef PPPOE_PFIL
 done:
 /*
  * Restore frame.
  */	
-	switch (ether_type) {
-#ifdef MPLS
-	case ETHERTYPE_MPLS:
-/*
- * Prepend MPLS label stack.
- */	
-	 	M_PREPEND(m, mtm->mtm_size, M_NOWAIT);
-		if (m == NULL) {
- 			error = ENOBUFS;
- 			goto bad;
- 		}
-		bcopy(mtm->mtm_stk, mtod(m, caddr_t), mtm->mtm_size);
-		m_tag_delete(m, &mtm->mtm_tag);
-		break;
-#endif /* MPLS */
-#ifdef PPPOE_PFIL
-	case ETHERTYPE_PPPOE:
+	if (ether_type == ETHERTYPE_PPPOE) {
 /*
  * Prepend rfc-1661 protocol id. 
  */	
@@ -547,12 +462,8 @@ done:
 		bcopy(&mtp->mtp_ph, mtod(m, caddr_t), 
 				sizeof(struct pppoe_hdr));
 		m_tag_delete(m, &mtp->mtp_tag);
-		break;
-#endif /* PPPOE_PFIL */	
-	default:
-		break;
 	}
-#endif	
+#endif /* PPPOE_PFIL */	
 
 /*
  * Restore Ethernet pci.
@@ -564,9 +475,9 @@ done:
  	}
  	eh = mtod(m, struct ether_header *);
  	
-#if defined(MPLS) || defined(PPPOE_PFIL)	
+#ifdef PPPOE_PFIL	
 	save_eh.ether_type = htons(ether_type);
-#endif
+#endif /* PPPOE_PFIL */	
 	
 	bcopy(&save_eh, mtod(m, struct ether_header *), ETHER_HDR_LEN);
 out:	
