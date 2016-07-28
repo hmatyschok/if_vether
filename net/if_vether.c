@@ -13,8 +13,10 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-/*-
- * Copyright (c) 2014, 2015, 2016 Henning Matysphok
+
+/*
+ * Copyright (c) 2014, 2015, 2016 Henning Matyschok
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -22,23 +24,22 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following displaimer in the
+ *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
-
+ 
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
@@ -49,7 +50,11 @@
 #include <sys/systm.h>
 #include <sys/sysctl.h>
 
+#include <sys/types.h>
+#include <sys/malloc.h>
+
 #include <net/if.h>
+#include <net/if_var.h>
 #include <net/if_arp.h>
 #include <net/if_clone.h>
 #include <net/if_media.h>
@@ -203,7 +208,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
  */
 	lla[0] = 0x0;
 	randval = arc4random();
-	(void)memcpy(&lla[1], &randval, sizeof(uint32_t));
+	memcpy(&lla[1], &randval, sizeof(uint32_t));
 	lla[5] = (uint8_t)unit; /* Interface major number */
 /*
  * Initialize ethernet specific attributes and perform inclusion 
@@ -321,7 +326,6 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * IAP for transmission.
  */				
 			ETHER_BPF_MTAP(ifp, m);
-			ifp->if_opackets++;	
 /* 
  * Discard any frame, if not if_bridge(4) member.
  */				
@@ -354,7 +358,6 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * IAP for reception.
  */				
 			ETHER_BPF_MTAP(ifp, m);	
-			ifp->if_ipackets++;	
 /* 
  * Discard any frame, if monitoring is enabled.
  */		

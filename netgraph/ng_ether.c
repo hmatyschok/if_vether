@@ -39,10 +39,10 @@
  * Authors: Archie Cobbs <archie@freebsd.org>
  *	    Julian Elischer <julian@freebsd.org>
  *
- * $FreeBSD: releng/10.1/sys/netgraph/ng_ether.c 246324 2013-02-04 17:29:13Z avg $
+ * $FreeBSD: head/sys/netgraph/ng_ether.c 290819 2015-11-14 13:34:03Z melifaro $
  */
-/*-
- * Copyright (c) 2014, 2015, 2016 Henning Matysphok
+/*
+ * Copyright (c) 2014, 2015, 2016 Henning Matyschok
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,28 +50,28 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following displaimer in the
+ *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
-
+ 
 /*
  * ng_ether(4) netgraph node type
  */
 
 #include <sys/param.h>
+#include <sys/eventhandler.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
@@ -98,7 +98,7 @@
 
 MODULE_VERSION(ng_ether, 1);
 
-#define IFP2NG(ifp)  (IFP2AC((ifp))->ac_netgraph)
+#define IFP2NG(ifp)  ((ifp)->if_l2com)
 
 /* Per-node private data */
 struct private {
@@ -439,7 +439,7 @@ ng_ether_ifnet_arrival_event(void *arg __unused, struct ifnet *ifp)
 
 	/* Only ethernet interfaces are of interest. */
 	if (ifp->if_type != IFT_ETHER
-		&& ifp->if_type != IFT_L2VLAN)
+	    && ifp->if_type != IFT_L2VLAN)
 		return;
 
 	/*
@@ -558,7 +558,6 @@ ng_ether_rcvmsg(node_p node, item_p item, hook_p lasthook)
 			}
 			error = if_setlladdr(priv->ifp,
 			    (u_char *)msg->data, ETHER_ADDR_LEN);
-			EVENTHANDLER_INVOKE(iflladdr_event, priv->ifp);
 			break;
 		    }
 		case NGM_ETHER_GET_PROMISC:
@@ -732,7 +731,7 @@ ng_ether_rcv_lower(hook_p hook, item_p item)
 		m->m_flags |= M_PROTO2;
 
 	/* Send it on its way */
-	return ether_output_frame(ifp, m);
+	return (ether_output_frame(ifp, m));
 }
 
 /*
@@ -899,7 +898,7 @@ vnet_ng_ether_init(const void *unused)
 	/* Create nodes for any already-existing Ethernet interfaces. */
 	IFNET_RLOCK();
 	TAILQ_FOREACH(ifp, &V_ifnet, if_link) {
-		if (ifp->if_type == IFT_ETHER 
+		if (ifp->if_type == IFT_ETHER
 		    || ifp->if_type == IFT_L2VLAN)
 			ng_ether_attach(ifp);
 	}
