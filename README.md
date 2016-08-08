@@ -10,6 +10,7 @@ where ifp0 is member.
 
 Frame output:
 
+<pre><code>
      + inet_output()             + ng_ether_rcv_lower()
      |                           |
      v                           | 
@@ -32,9 +33,9 @@ Frame output:
                 |
                 v
                 +-{ physical broadcast media } 
-
+</code></pre>
 Frame input:
-
+<pre><code>
      +-{ physical broadcast media } 
      |
      v
@@ -60,5 +61,6 @@ Frame input:
      |                          return (m);
      v
      + ether_demux() 
+</code></pre>
 
-
+[![Flattr this git repo](http://api.flattr.com/button/flattr-badge-large.png)](https://flattr.com/submit/auto?user_id=hmatyschok&url=https://github.com/hmatyschok/MeshBSD&title=MeshBSD&language=&tags=github&category=software) Please feel free to support me anytime.
