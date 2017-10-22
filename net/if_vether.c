@@ -61,8 +61,8 @@
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
 
-#include <netarp/if_arp.h>
-#include <netarp/if_llatbl.h>
+#include <net/if_arp.h>
+#include <net/if_llatbl.h>
 
 /*
  * Service Access Point for interface cloner.
