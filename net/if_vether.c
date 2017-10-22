@@ -15,8 +15,7 @@
  */
 
 /*
- * Copyright (c) 2014, 2015, 2016 Henning Matyschok
- * All rights reserved.
+ * Copyright (c) 2014, 2015, 2016, 2017 Henning Matyschok
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -55,14 +54,24 @@
 
 #include <net/if.h>
 #include <net/if_var.h>
-#include <net/if_arp.h>
 #include <net/if_clone.h>
 #include <net/if_media.h>
 #include <net/if_types.h>
 #include <net/bpf.h>
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
-#include <net/if_llatbl.h>
+
+#include <netarp/if_arp.h>
+#include <netarp/if_llatbl.h>
+
+/*
+ * Service Access Point for interface cloner.
+ */
+static int	vether_clone_create(struct if_clone *, int, caddr_t);
+static void 	vether_clone_destroy(struct ifnet *);
+ 
+static struct if_clone *vether_cloner;
+static const char vether_name[] = "vether";
 
 /*
  * Virtual Ethernet interface, ported from OpenBSD. This interface 
@@ -134,31 +143,29 @@ struct vether_softc {
 	int	sc_status;
 	LIST_ENTRY(vether_softc) vether_list;
 };
-#define	VETHER_LOCK_INIT(sc)	mtx_init(&(sc)->sc_mtx, "vether softc",	\
-				     NULL, MTX_DEF)
+#define	VETHER_LOCK_INIT(sc) \
+	mtx_init(&(sc)->sc_mtx, "vether softc",	NULL, MTX_DEF)
 #define	VETHER_LOCK_DESTROY(sc)	mtx_destroy(&(sc)->sc_mtx)
 #define	VETHER_LOCK(sc)		mtx_lock(&(sc)->sc_mtx)
 #define	VETHER_UNLOCK(sc)		mtx_unlock(&(sc)->sc_mtx)
 #define	VETHER_LOCK_ASSERT(sc)	mtx_assert(&(sc)->sc_mtx, MA_OWNED)	
 
-static int	vether_clone_create(struct if_clone *, int, caddr_t);
-static void	vether_clone_destroy(struct ifnet *);
- 
-static struct if_clone *vether_cloner;
-static const char vether_name[] = "vether";
-
 static LIST_HEAD(, vether_softc) vether_list;
-
 static struct mtx vether_list_mtx;
 
-static void	vether_init(void *);
-static void	vether_stop(struct ifnet *, int);
-static void	vether_start_locked(struct vether_softc *,struct ifnet *);
-static void	vether_start(struct ifnet *);
+#define VETHER_IF_FLAGS 	\
+	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER)
+#define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
+#define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
-static int	vether_media_change(struct ifnet *);
-static void	vether_media_status(struct ifnet *, struct ifmediareq *);
-static int	vether_ioctl(struct ifnet *, u_long, caddr_t);
+static void 	vether_init(void *);
+static void 	vether_stop(struct ifnet *, int);
+static void 	vether_start_locked(struct vether_softc *,struct ifnet *);
+static void 	vether_start(struct ifnet *);
+
+static int 	vether_media_change(struct ifnet *);
+static void 	vether_media_status(struct ifnet *, struct ifmediareq *);
+static int 	vether_ioctl(struct ifnet *, u_long, caddr_t);
 
 /*
  * Ctor.
@@ -167,9 +174,9 @@ static int
 vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
-	struct ifnet *ifp;	
-	uint32_t randval;
+	struct ifnet *ifp;
 	uint8_t	lla[ETHER_ADDR_LEN];
+	int error;
 /*
  * Allocate software context.
  */ 
@@ -177,7 +184,8 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifp = sc->sc_ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		free(sc, M_DEVBUF);
-		return (ENOSPC);
+		error = ENOSPC;
+		goto out;
 	}
 	if_initname(ifp, vether_name, unit);
 /*
@@ -186,30 +194,34 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	VETHER_LOCK_INIT(sc);
 	ifp->if_softc = sc;
 /*
- * Initialize specific attributes.
+ * Initialize its attributes.
  */ 
 	ifp->if_init = vether_init;
 	ifp->if_ioctl = vether_ioctl;
 	ifp->if_start = vether_start;
+
+ 	ifp->if_flags = VETHER_IF_FLAGS;
  
- 	ifp->if_snd.ifq_maxlen = ifqmaxlen;
- 	ifp->if_flags = (IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER);
- 
-	ifp->if_capabilities = IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU;
-	ifp->if_capenable = IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU;
+	ifp->if_capabilities = VETHER_IFCAP_FLAGS;
+	ifp->if_capenable = VETHER_IFCAP_FLAGS;
 	
 	ifmedia_init(&sc->sc_ifm, 0, vether_media_change, vether_media_status);
-	ifmedia_add(&sc->sc_ifm, IFM_ETHER|IFM_AUTO, 0, NULL);
-	ifmedia_set(&sc->sc_ifm, IFM_ETHER|IFM_AUTO);
+	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
+	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
  	
  	sc->sc_status = IFM_AVALID;
 /*
- * Generate randomized lla.  
+ * Map prefix on lla.  
+ */	
+	lla[0] = 0x00;
+/*
+ * Map randomized infix on lla.  
+ */	
+	arc4rand(&lla[1], sizeof(uint32_t), 0);
+/* 
+ * Map interface major number as postfix on lla. 
  */
-	lla[0] = 0x0;
-	randval = arc4random();
-	memcpy(&lla[1], &randval, sizeof(uint32_t));
-	lla[5] = (uint8_t)unit; /* Interface major number */
+	lla[5] = (uint8_t)unit; 
 /*
  * Initialize ethernet specific attributes and perform inclusion 
  * mapping on link layer, netgraph(4) domain and generate by bpf(4) 
@@ -224,8 +236,9 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	mtx_unlock(&vether_list_mtx);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
- 
-	return (0);
+	error = 0;
+out: 
+	return (error);
 }
 
 /*
