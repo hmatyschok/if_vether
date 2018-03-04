@@ -725,7 +725,9 @@ ng_ether_rcv_lower(hook_p hook, item_p item)
 		    ETHER_ADDR_LEN);
 	}
 /*
- * Any frame still passes if_vether(4) is marked with M_PROTO2 flag. 
+ * Any frame still passes if_vether(4) is 
+ * marked by M_PROTO2 flag for internal
+ * processing bi if_vether0; 
  */	
 	if (ifp->if_flags & IFF_VETHER)
 		m->m_flags |= M_PROTO2;

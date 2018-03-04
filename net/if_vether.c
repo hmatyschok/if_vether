@@ -15,7 +15,7 @@
  */
 
 /*
- * Copyright (c) 2014, 2015, 2016, 2017 Henning Matyschok
+ * Copyright (c) 2014, 2015, 2016, 2017, 2018 Henning Matyschok
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -61,8 +61,8 @@
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
 
-#include <net/if_arp.h>
-#include <net/if_llatbl.h>
+#include <netinet/if_arp.h>
+#include <netinet/if_llatbl.h>
 
 /*
  * Service Access Point for interface cloner.
@@ -205,7 +205,8 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifp->if_capabilities = VETHER_IFCAP_FLAGS;
 	ifp->if_capenable = VETHER_IFCAP_FLAGS;
 	
-	ifmedia_init(&sc->sc_ifm, 0, vether_media_change, vether_media_status);
+	ifmedia_init(&sc->sc_ifm, 0, vether_media_change, 
+		vether_media_status);
 	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
  	
@@ -283,9 +284,11 @@ vether_init(void *xsc)
 	struct ifnet *ifp;
  
 	VETHER_LOCK(sc);
+
 	ifp = sc->sc_ifp;
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
+
 	VETHER_UNLOCK(sc);
 }
  
@@ -338,18 +341,11 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 /*
  * IAP for transmission.
  */				
-			ETHER_BPF_MTAP(ifp, m);
+			BPF_MTAP(ifp, m);
 /* 
  * Discard any frame, if not if_bridge(4) member.
  */				
 			if (ifp->if_bridge == NULL) {
-				m_freem(m);
-				continue;
-			}			
-/* 
- * Discard any frame, if monitoring is enabled.
- */		
-			if (ifp->if_flags & IFF_MONITOR) {
 				m_freem(m);
 				continue;
 			}
@@ -368,16 +364,8 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 			BRIDGE_OUTPUT(ifp, m, error);	
 		} else if (m->m_pkthdr.rcvif != ifp) {
 /*
- * IAP for reception.
- */				
-			ETHER_BPF_MTAP(ifp, m);	
-/* 
- * Discard any frame, if monitoring is enabled.
- */		
-			if (ifp->if_flags & IFF_MONITOR) {
-				m_freem(m);
-				continue;
-			}
+ * Map Interface Control information on message primitive.
+ */ 	
 			m->m_pkthdr.rcvif = ifp;
 /*
  * Demultiplex frame by ether_input.

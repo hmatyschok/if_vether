@@ -63,7 +63,8 @@
  * OpenBSD: if_bridge.c,v 1.60 2001/06/15 03:38:33 itojun Exp
  */
 /*
- * Copyright (c) 2014, 2015, 2016 Henning Matyschok
+ * Copyright (c) 2018 Henning Matyschok
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -94,16 +95,14 @@
  *	- Currently only supports Ethernet-like interfaces (Ethernet,
  *	  802.11, VLANs on Ethernet, etc.)  Figure out a nice way
  *	  to bridge other types of interfaces (FDDI-FDDI, and maybe
- *	  consider heterogenous bridges).
+ *	  consider heterogeneous bridges).
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/net/if_bridge.c 284348 2015-06-13 19:39:21Z kp $");
+__FBSDID("$FreeBSD: releng/11.1/sys/net/if_bridge.c 313050 2017-02-01 20:27:38Z kp $");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
-
-#include "opt_pppoe_pfil.h"
 
 #include <sys/param.h>
 #include <sys/eventhandler.h>
@@ -158,6 +157,29 @@ __FBSDID("$FreeBSD: head/sys/net/if_bridge.c 284348 2015-06-13 19:39:21Z kp $");
 
 #include <net/route.h>
 
+#ifdef PPPOE_PFIL
+/*
+ * Protocol field values are from net/ppp_defs.h
+ */
+#ifdef INET
+#define PPP_IP		0x21	/* Internet Protocol */
+#endif /* INET */
+#ifdef INET6
+#define PPP_IPV6	0x57	/* Internet Protocol version 6 */
+#endif /* INET6 */
+
+/*
+ * Holds copy of rfc-2516 PCI where IPv[46] PDU is mapped.  
+ */
+struct m_tag_pppoe {
+	struct m_tag	mtp_tag;
+	struct pppoe_hdr	mtp_ph;
+	uint16_t 		mtp_pr;
+};
+#define	MTAG_PPPOE		1402876965
+#define	MTAG_PPPOE_PCI	0 
+#endif /* PPPOE_PFIL */
+
 /*
  * Size of the route hash table.  Must be a power of two.
  */
@@ -191,7 +213,8 @@ __FBSDID("$FreeBSD: head/sys/net/if_bridge.c 284348 2015-06-13 19:39:21Z kp $");
 /*
  * List of capabilities to possibly mask on the member interface.
  */
-#define	BRIDGE_IFCAPS_MASK		(IFCAP_TOE|IFCAP_TSO|IFCAP_TXCSUM)
+#define	BRIDGE_IFCAPS_MASK		(IFCAP_TOE|IFCAP_TSO|IFCAP_TXCSUM|\
+					 IFCAP_TXCSUM_IPV6)
 
 /*
  * List of capabilities to strip
@@ -357,7 +380,7 @@ static int	bridge_ip_checkbasic(struct mbuf **mp);
 #ifdef INET6
 static int	bridge_ip6_checkbasic(struct mbuf **mp);
 #endif /* INET6 */
-static int	bridge_fragment(struct ifnet *, struct mbuf *,
+static int	bridge_fragment(struct ifnet *, struct mbuf **mp,
 		    struct ether_header *, int, struct llc *);
 static void	bridge_linkstate(struct ifnet *ifp);
 static void	bridge_linkcheck(struct bridge_softc *sc);
@@ -446,7 +469,6 @@ TUNABLE_INT("net.link.bridge.pfil_pppoe", &pfil_pppoe);
 SYSCTL_INT(_net_link_bridge, OID_AUTO, pfil_pppoe, CTLFLAG_RW,
     &pfil_pppoe, 0, "Only pass PPPoE packets when pfil is enabled");
 #endif /* PPPOE_PFIL */
-
 
 struct bridge_control {
 	int	(*bc_func)(struct bridge_softc *, void *);
@@ -578,7 +600,7 @@ vnet_bridge_uninit(const void *unused __unused)
 	V_bridge_cloner = NULL;
 	BRIDGE_LIST_LOCK_DESTROY();
 }
-VNET_SYSUNINIT(vnet_bridge_uninit, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY,
+VNET_SYSUNINIT(vnet_bridge_uninit, SI_SUB_PSEUDO, SI_ORDER_ANY,
     vnet_bridge_uninit, NULL);
 
 static int
@@ -646,7 +668,7 @@ sysctl_pfil_ipfw(SYSCTL_HANDLER_ARGS)
 		if (V_pfil_ipfw) {
 #ifdef PPPOE_PFIL
 			pfil_pppoe = 0;
-#endif /* PPPOE_PFIL */
+#endif /* PPPOE_PFIL */			
 			V_pfil_onlyip = 0;
 			V_pfil_bridge = 0;
 			V_pfil_member = 0;
@@ -948,14 +970,18 @@ bridge_mutecaps(struct bridge_softc *sc)
 		mask &= bif->bif_savedcaps;
 	}
 
+	BRIDGE_XLOCK(sc);
 	LIST_FOREACH(bif, &sc->sc_iflist, bif_next) {
 		enabled = bif->bif_ifp->if_capenable;
 		enabled &= ~BRIDGE_IFCAPS_STRIP;
 		/* strip off mask bits and enable them again if allowed */
 		enabled &= ~BRIDGE_IFCAPS_MASK;
 		enabled |= mask;
+		BRIDGE_UNLOCK(sc);
 		bridge_set_ifcap(sc, bif, enabled);
+		BRIDGE_LOCK(sc);
 	}
+	BRIDGE_XDROP(sc);
 
 }
 
@@ -965,6 +991,8 @@ bridge_set_ifcap(struct bridge_softc *sc, struct bridge_iflist *bif, int set)
 	struct ifnet *ifp = bif->bif_ifp;
 	struct ifreq ifr;
 	int error;
+
+	BRIDGE_UNLOCK_ASSERT(sc);
 
 	bzero(&ifr, sizeof(ifr));
 	ifr.ifr_reqcap = set;
@@ -1956,6 +1984,7 @@ bridge_enqueue(struct bridge_softc *sc, struct ifnet *dst_ifp, struct mbuf *m)
 			m->m_flags &= ~M_VLANTAG;
 		}
 
+		M_ASSERTPKTHDR(m); /* We shouldn't transmit mbuf without pkthdr */
 		if ((err = dst_ifp->if_transmit(dst_ifp, m))) {
 			m_freem(m0);
 			if_inc_counter(sc->sc_ifp, IFCOUNTER_OERRORS, 1);
@@ -1983,11 +2012,7 @@ static void
 bridge_dummynet(struct mbuf *m, struct ifnet *ifp)
 {
 	struct bridge_softc *sc;
-#ifdef PPPOE_PFIL
-	struct ether_header eh1;
-	struct m_tag_pppoe *mtp;
-	int dn_passed;
-#endif /* PPPOE_PFIL */	
+
 	sc = ifp->if_bridge;
 
 	/*
@@ -2010,52 +2035,6 @@ bridge_dummynet(struct mbuf *m, struct ifnet *ifp)
 		if (m == NULL)
 			return;
 	}
-#ifdef PPPOE_PFIL
-	dn_passed = 0;
-
-	if ((mtp = (struct m_tag_pppoe *)
-		m_tag_locate(m, MTAG_PPPOE, 
-			MTAG_PPPOE_PCI, NULL)) != NULL) {
-		
-		if (dn_passed != 0) {
-			m_freem(m);
-			return;
-		}
-		dn_passed = 1;
-/*
- * Backup PCI and strip it off.
- */	
-		m_copydata(m, 0, ETHER_HDR_LEN, (caddr_t) &eh1);
-		m_adj(m, ETHER_HDR_LEN);
-/*
- * Prepend rfc-1661 PCI.
- */	
-		M_PREPEND(m, sizeof(uint16_t), M_NOWAIT);
-		if (m == NULL)
-			return;
-		
-		bcopy(&mtp->mtp_pr, mtod(m, caddr_t), sizeof(uint16_t));
-/*
- * Restore rfc-2516 PCI.
- */	
-		M_PREPEND(m, sizeof(struct pppoe_hdr), M_NOWAIT);
-		if (m == NULL)
-			return;
-			
-		bcopy(&mtp->mtp_ph, mtod(m, caddr_t), 
-			sizeof(struct pppoe_hdr));
-/*
- * Restore former Ethernet protocol id and prepend.
- */	
-		eh1.ether_type = htons(ETHERTYPE_PPPOE);
-		M_PREPEND(m, ETHER_HDR_LEN, M_NOWAIT);
-		if (m == NULL)
-			return;
-			
-		bcopy(&eh1, mtod(m, caddr_t), ETHER_HDR_LEN);
-		m_tag_delete(m, &mtp->mtp_tag);
-	}
-#endif /* PPPOE_PFIL */	
 
 	bridge_enqueue(sc, ifp, m);
 }
@@ -2413,7 +2392,7 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
  */
 	if (ifp->if_flags & IFF_VETHER) 
 		return (m);	
-  	
+	
 	BRIDGE_LOCK(sc);
 	bif = bridge_lookup_member_if(sc, ifp);
 	if (bif == NULL) {
@@ -3184,11 +3163,11 @@ bridge_state_change(struct ifnet *ifp, int state)
 static int
 bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 {
-#ifdef PPPOE_PFIL
- 	struct m_tag_pppoe *mtp;
-#endif /* PPPOE_PFIL */
 	int snap, error, i, hlen;
 	struct ether_header *eh1, eh2;
+#ifdef PPPOE_PFIL
+ 	struct m_tag_pppoe *mtp;
+#endif /* PPPOE_PFIL */	
 	struct ip *ip;
 	struct llc llc1;
 	u_int16_t ether_type;
@@ -3291,11 +3270,11 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	}
 #ifdef PPPOE_PFIL
 /*
- * Cache pci of sdu.
+ * Cache PPPoE header.
  */
 	if (ether_type == ETHERTYPE_PPPOE) {
 /*
- * Allocate MTAG_PPPOE containing rfc-2516 PCI. 
+ * Allocate MTAG_PPPOE. 
  */
 		mtp = (struct m_tag_pppoe *)
 			m_tag_alloc(MTAG_PPPOE, MTAG_PPPOE_PCI, 
@@ -3303,7 +3282,7 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
  		if (mtp == NULL)
  			goto bad;	
 /*
- * Backup and strip off rfc-2516 and rfc-1661 pci.
+ * Backup and strip off rfc-2516 and rfc-1661 header.
  */	
 		m_copydata(*mp, 0, sizeof(struct pppoe_hdr), (caddr_t) &mtp->mtp_ph);
 		m_adj(*mp, sizeof(struct pppoe_hdr));
@@ -3328,13 +3307,14 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 			break;		
 		default:
 /*
- * Bypass filtering, if sdu is not in AF_INET[6].
+ * Bypass filtering, if sdu is not in AF_INET{6}.
  */		
 			error = 0;
 			goto out;
 		}			
 	}					
 #endif /* PPPOE_PFIL */	
+
 	/*
 	 * Check the IP header for alignment and errors
 	 */
@@ -3391,10 +3371,12 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 			break;
 
 		/* check if we need to fragment the packet */
+		/* bridge_fragment generates a mbuf chain of packets */
+		/* that already include eth headers */
 		if (V_pfil_member && ifp != NULL && dir == PFIL_OUT) {
 			i = (*mp)->m_pkthdr.len;
 			if (i > ifp->if_mtu) {
-				error = bridge_fragment(ifp, *mp, &eh2, snap,
+				error = bridge_fragment(ifp, mp, &eh2, snap,
 					    &llc1);
 				return (error);
 			}
@@ -3406,7 +3388,7 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 		if (hlen < sizeof(struct ip))
 			goto bad;
 		if (hlen > (*mp)->m_len) {
-			if ((*mp = m_pullup(*mp, hlen)) == 0)
+			if ((*mp = m_pullup(*mp, hlen)) == NULL)
 				goto bad;
 			ip = mtod(*mp, struct ip *);
 			if (ip == NULL)
@@ -3455,12 +3437,13 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	/*
 	 * Finally, put everything back the way it was and return
 	 */
+	 
 #ifdef PPPOE_PFIL
 out: 
 /*
  * Restore frame.
  */	
-	switch (ether_type == ETHERTYPE_PPPOE) {
+	if (ether_type == ETHERTYPE_PPPOE) {
 /*
  * Prepend rfc-1661 protocol id. 
  */	
@@ -3551,7 +3534,7 @@ bridge_ip_checkbasic(struct mbuf **mp)
 		goto bad;
 	}
 	if (hlen > m->m_len) {
-		if ((m = m_pullup(m, hlen)) == 0) {
+		if ((m = m_pullup(m, hlen)) == NULL) {
 			KMOD_IPSTAT_INC(ips_badhlen);
 			goto bad;
 		}
@@ -3660,56 +3643,77 @@ bad:
 /*
  * bridge_fragment:
  *
- *	Return a fragmented mbuf chain.
+ *	Fragment mbuf chain in multiple packets and prepend ethernet header.
  */
 static int
-bridge_fragment(struct ifnet *ifp, struct mbuf *m, struct ether_header *eh,
+bridge_fragment(struct ifnet *ifp, struct mbuf **mp, struct ether_header *eh,
     int snap, struct llc *llc)
 {
-	struct mbuf *m0;
+	struct mbuf *m = *mp, *nextpkt = NULL, *mprev = NULL, *mcur = NULL;
 	struct ip *ip;
 	int error = -1;
 
 	if (m->m_len < sizeof(struct ip) &&
 	    (m = m_pullup(m, sizeof(struct ip))) == NULL)
-		goto out;
+		goto dropit;
 	ip = mtod(m, struct ip *);
 
 	m->m_pkthdr.csum_flags |= CSUM_IP;
 	error = ip_fragment(ip, &m, ifp->if_mtu, ifp->if_hwassist);
 	if (error)
-		goto out;
+		goto dropit;
 
-	/* walk the chain and re-add the Ethernet header */
-	for (m0 = m; m0; m0 = m0->m_nextpkt) {
-		if (error == 0) {
-			if (snap) {
-				M_PREPEND(m0, sizeof(struct llc), M_NOWAIT);
-				if (m0 == NULL) {
-					error = ENOBUFS;
-					continue;
-				}
-				bcopy(llc, mtod(m0, caddr_t),
-				    sizeof(struct llc));
-			}
-			M_PREPEND(m0, ETHER_HDR_LEN, M_NOWAIT);
-			if (m0 == NULL) {
+	/*
+	 * Walk the chain and re-add the Ethernet header for
+	 * each mbuf packet.
+	 */
+	for (mcur = m; mcur; mcur = mcur->m_nextpkt) {
+		nextpkt = mcur->m_nextpkt;
+		mcur->m_nextpkt = NULL;
+		if (snap) {
+			M_PREPEND(mcur, sizeof(struct llc), M_NOWAIT);
+			if (mcur == NULL) {
 				error = ENOBUFS;
-				continue;
+				if (mprev != NULL)
+					mprev->m_nextpkt = nextpkt;
+				goto dropit;
 			}
-			bcopy(eh, mtod(m0, caddr_t), ETHER_HDR_LEN);
-		} else
-			m_freem(m);
+			bcopy(llc, mtod(mcur, caddr_t),sizeof(struct llc));
+		}
+
+		M_PREPEND(mcur, ETHER_HDR_LEN, M_NOWAIT);
+		if (mcur == NULL) {
+			error = ENOBUFS;
+			if (mprev != NULL)
+				mprev->m_nextpkt = nextpkt;
+			goto dropit;
+		}
+		bcopy(eh, mtod(mcur, caddr_t), ETHER_HDR_LEN);
+
+		/*
+		 * The previous two M_PREPEND could have inserted one or two
+		 * mbufs in front so we have to update the previous packet's
+		 * m_nextpkt.
+		 */
+		mcur->m_nextpkt = nextpkt;
+		if (mprev != NULL)
+			mprev->m_nextpkt = mcur;
+		else {
+			/* The first mbuf in the original chain needs to be
+			 * updated. */
+			*mp = mcur;
+		}
+		mprev = mcur;
 	}
 
-	if (error == 0)
-		KMOD_IPSTAT_INC(ips_fragmented);
-
+	KMOD_IPSTAT_INC(ips_fragmented);
 	return (error);
 
-out:
-	if (m != NULL)
-		m_freem(m);
+dropit:
+	for (mcur = *mp; mcur; mcur = m) { /* droping the full packet chain */
+		m = mcur->m_nextpkt;
+		m_freem(mcur);
+	}
 	return (error);
 }
 
