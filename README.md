@@ -1,4 +1,4 @@
-if_vether(4) - port for FreeBSD 10.x-RELEASE
+if_vether(4) - port for FreeBSD 11.x-RELEASE
 --------------------------------------------
  
 Virtual Ethernet interface, ported from OpenBSD. This interface 
