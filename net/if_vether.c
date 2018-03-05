@@ -377,6 +377,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * Discard, any other kind of frame.
  */	
 				m_freem(m);
+				continue;
 			}										
 		} else if (m->m_pkthdr.rcvif != ifp) {
 /*
