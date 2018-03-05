@@ -388,8 +388,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * Discard any duplicated frame.
  */ 		
 			m_freem(m);
-		}
-		continue;		
+		}		
 	}								
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 }
