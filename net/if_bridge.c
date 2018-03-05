@@ -2065,6 +2065,14 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, struct sockaddr *sa,
 	}
 
 	eh = mtod(m, struct ether_header *);
+/*
+ * Any by ether_output tx'd frame maps to 
+ * if_vether(4) is marked by M_PROTO3 flag 
+ * for internal processing by if_vether; 
+ */		
+	if (ifp->if_flags & IFF_VETHER)
+		m->m_flags |= M_PROTO3;
+
 	sc = ifp->if_bridge;
 	vlan = VLANTAGOF(m);
 
@@ -2079,7 +2087,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, struct sockaddr *sa,
 		dst_if = ifp;
 		goto sendunicast;
 	}
-
+	
 	/*
 	 * If the packet is a multicast, or we don't know a better way to
 	 * get there, send to all interfaces.

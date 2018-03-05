@@ -61,8 +61,8 @@
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
 
-#include <netinet/if_arp.h>
-#include <netinet/if_llatbl.h>
+#include <net/if_arp.h>
+#include <net/if_llatbl.h>
 
 /*
  * Service Access Point for interface cloner.
@@ -349,19 +349,35 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 				m_freem(m);
 				continue;
 			}
+/*
+ * Map Interface Control information.
+ */ 
+			m->m_pkthdr.rcvif = ifp;	
+
+			if (m->m_flags & M_PROTO3) {
+/*
+ * Frame was tx'd by ether_output.
+ */				
+				m->m_flags &= ~(M_PROTO2|M_PROTO3);
+/*
+ * Demultiplex frame by ether_input.
+ */	
+				(*ifp->if_input)(ifp, m);			
+			} else if (m->m_flags & M_PROTO2) {
 /* 
- * Discard, if frame not passed ng_ether_rcv_lower.
+ * Frame was tx'd by ng_ether_rcv_lower.		
  */
-			if ((m->m_flags & M_PROTO2) == 0) {
-				m_freem(m);
-				continue;
-			}
-			m->m_flags &= ~M_PROTO2;
-			m->m_pkthdr.rcvif = ifp;			
+				m->m_flags &= ~M_PROTO2;
 /*
  * Broadcast frame via if_bridge(4).
- */			
-			BRIDGE_OUTPUT(ifp, m, error);	
+ */	
+				BRIDGE_OUTPUT(ifp, m, error);	
+			} else {
+/* 
+ * Discard, any other kind of frame.
+ */	
+				m_freem(m);
+			}										
 		} else if (m->m_pkthdr.rcvif != ifp) {
 /*
  * Map Interface Control information on message primitive.
