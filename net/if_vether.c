@@ -322,7 +322,6 @@ static void
 vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 {
 	struct mbuf *m;
-	int error;
 
 	VETHER_LOCK_ASSERT(sc);
 	
@@ -336,55 +335,52 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 			m_freem(m);
 			continue;
 		}
-		
-		if (m->m_pkthdr.rcvif == NULL) {
+/* 
+ * Discard any frame, if not member of if_bridge(4).
+ */				
+		if (ifp->if_bridge == NULL) {
+			m_freem(m);
+			continue;
+		}				
+/*
+ * Three cases are considered here:
+ * 
+ *  (a) Frame was tx'd by layer above.
+ * 
+ *  (b) Frame was rx'd by link-layer.
+ * 
+ *  (c) Data sink.
+ */ 				
+		if (m->m_pkthdr.rcvif == NULL) {		
+/*
+ * If frame was tx'd by
+ * 
+ *  (a) ng_ether_rcv_lower.
+ * 
+ *  (b) bridge_output(9) during runtime 
+ *      of ether_output on if_vether(9). 
+ */
+			if (m->m_flags & M_PROTO2) {
+				m->m_flags &= ~M_PROTO2;
 /*
  * IAP for transmission.
  */				
-			BPF_MTAP(ifp, m);
-/* 
- * Discard any frame, if not if_bridge(4) member.
- */				
-			if (ifp->if_bridge == NULL) {
-				m_freem(m);
-				continue;
-			}
-/*
- * Map Interface Control information.
- */ 
-			m->m_pkthdr.rcvif = ifp;	
-
-			if (m->m_flags & M_PROTO3) {
-/*
- * Frame was tx'd by ether_output.
- */				
-				m->m_flags &= ~(M_PROTO2|M_PROTO3);
-/*
- * Demultiplex frame by ether_input.
- */	
-				(*ifp->if_input)(ifp, m);			
-			} else if (m->m_flags & M_PROTO2) {
-/* 
- * Frame was tx'd by ng_ether_rcv_lower.		
- */
-				m->m_flags &= ~M_PROTO2;
+				BPF_MTAP(ifp, m);				
 /*
  * Broadcast frame via if_bridge(4).
  */	
-				BRIDGE_OUTPUT(ifp, m, error);	
-			} else {
-/* 
- * Discard, any other kind of frame.
- */	
-				m_freem(m);
-			}										
-		} else if (m->m_pkthdr.rcvif != ifp) {
-/*
- * Map Interface Control information on message primitive.
- */ 	
-			m->m_pkthdr.rcvif = ifp;
+				(void)(*bridge_output_p)(ifp, m, NULL, NULL);
+			} else {				
+				m->m_pkthdr.rcvif = ifp;					
 /*
  * Demultiplex frame by ether_input.
+ */	
+				(*ifp->if_input)(ifp, m);		
+			}										
+		} else if (m->m_pkthdr.rcvif != ifp) {
+			m->m_pkthdr.rcvif = ifp;
+/*
+ * Demultiplex any other frame.
  */	
 			(*ifp->if_input)(ifp, m);
 		} else {

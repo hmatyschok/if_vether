@@ -2065,13 +2065,6 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, struct sockaddr *sa,
 	}
 
 	eh = mtod(m, struct ether_header *);
-/*
- * Any by ether_output tx'd frame maps to 
- * if_vether(4) is marked by M_PROTO3 flag 
- * for internal processing by if_vether; 
- */		
-	if (ifp->if_flags & IFF_VETHER)
-		m->m_flags |= M_PROTO3;
 
 	sc = ifp->if_bridge;
 	vlan = VLANTAGOF(m);
@@ -2393,13 +2386,19 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
  * Push back any by if_vether(4) received frame
  * for local processing. Those kind of interfaces
  * are designed to operate as data sink.
- *
- * Forwarding by if_vether(4) received frames 
- * with multi- / broadcast destination addresses
- * may cause (so called) broadcast storms.
  */
-	if (ifp->if_flags & IFF_VETHER) 
-		return (m);	
+	if (ifp->if_flags & IFF_VETHER) {
+		eh = mtod(m, struct ether_header *);
+/*
+ * If we sent out, discard. 
+ */
+		if (memcmp(IF_LLADDR(ifp), 
+			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
+			m_freem(m);
+			return (NULL);
+		}
+		return (m);		
+	}
 	
 	BRIDGE_LOCK(sc);
 	bif = bridge_lookup_member_if(sc, ifp);
