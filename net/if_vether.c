@@ -158,6 +158,10 @@ static struct mtx vether_list_mtx;
 #define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
 #define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
+static	struct mbuf *vether_bridge_input(struct ifnet *, struct mbuf *);
+static	int vether_bridge_output(struct ifnet *, struct mbuf *,
+		struct sockaddr *, struct rtentry *);
+
 static void 	vether_init(void *);
 static void 	vether_stop(struct ifnet *, int);
 static void 	vether_start_locked(struct vether_softc *,struct ifnet *);
@@ -308,6 +312,67 @@ vether_stop(struct ifnet *ifp, int disable)
 /*
  * I/O.
  */
+
+static	struct mbuf *
+vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ifnet *bifp;
+	struct ether_header *eh;
+	
+	if ((bifp = ifp->if_bridge) == NULL)
+		return (m)
+	
+	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
+		return (m);
+/*
+ * Push back any by if_vether(4) received frame
+ * for local processing. Those kind of interfaces
+ * are designed to operate as data sink.
+ */
+	if (ifp->if_flags & IFF_VETHER) {
+		eh = mtod(m, struct ether_header *);
+/*
+ * If we sent out, discard. 
+ */
+		if (memcmp(IF_LLADDR(ifp), 
+			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
+			m_freem(m);
+			
+			log(LOG_KERN, "%s: vether: eh->ether_shost", __func__);
+			
+			return (NULL);
+		}
+		
+		log(LOG_KERN, "%s: vether: rx'd @ ether_input_internal", __func__);
+		
+		return (m);		
+	}
+	
+	return (bridge_output(ifp, m, NULL, NULL));
+}
+
+/*
+ * Any frame still passes if_vether(4) is 
+ * marked by M_PROTO2 flag for internal
+ * processing by if_vether(4); 
+ */
+static int 
+vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
+		struct sockaddr *sa, struct rtentry *rt)
+{
+	
+	if (m->m_len < ETHER_HDR_LEN) {
+		m = m_pullup(m, ETHER_HDR_LEN);
+		if (m == NULL)
+			return (0);
+	}
+
+	if (ifp->if_flags & IFF_VETHER)
+		m->m_flags |= M_PROTO2;
+	
+	return (bridge_output(ifp, m, sa, rt));
+} 
+ 
 static void
 vether_start(struct ifnet *ifp)
 {
@@ -330,65 +395,11 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL) 
 			break;
-			
-		if ((m->m_flags & M_PKTHDR) == 0) {
-			m_freem(m);
-			continue;
-		}
-/* 
- * Discard any frame, if not member of if_bridge(4).
- */				
-		if (ifp->if_bridge == NULL) {
-			m_freem(m);
-			continue;
-		}				
 /*
- * Three cases are considered here:
- * 
- *  (a) Frame was tx'd by layer above.
- * 
- *  (b) Frame was rx'd by link-layer.
- * 
- *  (c) Data sink.
- */ 				
-		if (m->m_pkthdr.rcvif == NULL) {		
-/*
- * If frame was tx'd by
- * 
- *  (a) ng_ether_rcv_lower.
- * 
- *  (b) bridge_output(9) during runtime 
- *      of ether_output on if_vether(9). 
+ * ...
  */
-			if (m->m_flags & M_PROTO2) {
-				m->m_flags &= ~M_PROTO2;
-/*
- * IAP for transmission.
- */				
-				BPF_MTAP(ifp, m);				
-/*
- * Broadcast frame via if_bridge(4).
- */	
-				(void)(*bridge_output_p)(ifp, m, NULL, NULL);
-			} else {				
-				m->m_pkthdr.rcvif = ifp;					
-/*
- * Demultiplex frame by ether_input.
- */	
-				(*ifp->if_input)(ifp, m);		
-			}										
-		} else if (m->m_pkthdr.rcvif != ifp) {
-			m->m_pkthdr.rcvif = ifp;
-/*
- * Demultiplex any other frame.
- */	
-			(*ifp->if_input)(ifp, m);
-		} else {
-/*
- * Discard any duplicated frame.
- */ 		
-			m_freem(m);
-		}		
+
+
 	}								
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 }
@@ -454,8 +465,20 @@ vether_mod_event(module_t mod, int event, void *data)
 		mtx_init(&vether_list_mtx, "if_vether_list", NULL, MTX_DEF);
 		vether_cloner = if_clone_simple(vether_name,
 			vether_clone_create, vether_clone_destroy, 0);
+/*
+ * Hook up Service Access Point for I/O on if_bridge(4).
+ */
+		bridge_input_p = bridge_input;
+		bridge_output_p = bridge_output;
+
 		break;
 	case MOD_UNLOAD:	
+/*
+ * Remove wrapper at hooks.
+ */	
+		bridge_input_p = bridge_input;
+		bridge_output_p = bridge_output;
+	
 		if_clone_detach(vether_cloner);
 		mtx_destroy(&vether_list_mtx);
 		break;
@@ -473,4 +496,3 @@ static moduledata_t vether_mod = {
 };
 DECLARE_MODULE(if_vether, vether_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
 MODULE_DEPEND(if_vether, ether, 1, 1, 1);
-

@@ -2382,24 +2382,7 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		m_freem(m);
 		return (NULL);
 	}
-/*
- * Push back any by if_vether(4) received frame
- * for local processing. Those kind of interfaces
- * are designed to operate as data sink.
- */
-	if (ifp->if_flags & IFF_VETHER) {
-		eh = mtod(m, struct ether_header *);
-/*
- * If we sent out, discard. 
- */
-		if (memcmp(IF_LLADDR(ifp), 
-			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
-			m_freem(m);
-			return (NULL);
-		}
-		return (m);		
-	}
-	
+
 	BRIDGE_LOCK(sc);
 	bif = bridge_lookup_member_if(sc, ifp);
 	if (bif == NULL) {
