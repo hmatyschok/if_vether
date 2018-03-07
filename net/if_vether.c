@@ -97,7 +97,7 @@ static const char vether_name[] = "vether";
  * Frame output: 
  * -------------
  *
- *  + inet_output()             + ng_ether_rcv_lower()
+ *  + xxx_output()              + ng_ether_rcv_lower()
  *  |                           |
  *  v                           | 
  *  + (*ifp0->if_output)()      |
@@ -111,8 +111,14 @@ static const char vether_name[] = "vether";
  *          \     +-----------+ vether_start_locked()
  *           \   / 
  *            \ /
- *             + bridge_output(), selects NIC for tx frames
+ *             + vether_bridge_output(), annotates tx'd frame
  *             |
+ *             |     if (ifp->if_flags & IFF_VETHER)
+ *	           |         m->m_flags |= M_VETHER;
+ *             |
+ *             | 
+ *             + bridge_output(), selects NIC for tx frames
+ *             | 
  *             + bridge_enqueue()  
  *             |
  *             + (*ifp->if_transmit)()
@@ -128,6 +134,8 @@ static const char vether_name[] = "vether";
  *  v
  *  + (*ifp->if_input)(), NIC rx frame 
  *  |
+ *  + vether_bridge_input()
+ *  |
  *  + bridge_input()
  *  |                           
  *  + bridge_forward(), selects ifp0 denotes instance of if_vether(4)
@@ -142,10 +150,21 @@ static const char vether_name[] = "vether";
  *     / \
  *    /   +--->+ ng_ether_input()  
  *   /
- *  + bridge_input(), but forwarding is stalled by
+ *  + vether_bridge_input(), but forwarding is stalled by
  *  |           
- *  |                  if (ifp0->if_type == IFT_VETHER)
- *  |                          return (m);
+ *  |                if (ifp->if_flags & IFF_VETHER) {
+ *	|                    eh = mtod(m, struct ether_header *);
+ *  |
+ *  |                    if (memcmp(IF_LLADDR(ifp), 
+ *  |                        eh->ether_shost, ETHER_ADDR_LEN) == 0) {
+ *  |                        m_freem(m);
+ *  |                           return (NULL);
+ *  |                    }
+ *  |                    m->m_flags &= ~M_VETHER;
+ *  |
+ *  |                    return (m);		
+ *  |                }
+ *  |
  *  v
  *  + ether_demux() 
  */
@@ -448,7 +467,7 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
  * Frame was emmited by ether_output{_frame}(9).
  */ 		
 		if (m->m_pkthdr.rcvif == NULL) 		
-			m->m_flags |= M_VETHER;	
+			m->m_flags |= M_VETHER;
 	}
 	
 	return ((*vether_bridge_output_p)(ifp, m, sa, rt));
