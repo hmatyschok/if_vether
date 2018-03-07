@@ -15,7 +15,7 @@
  */
 
 /*
- * Copyright (c) 2014, 2015, 2016, 2017, 2018 Henning Matyschok
+ * Copyright (c) 2018 Henning Matyschok
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -53,19 +53,32 @@
 #include <sys/malloc.h>
 
 #include <net/if.h>
+#include <net/if_arp.h>
 #include <net/if_var.h>
 #include <net/if_clone.h>
+#include <net/if_dl.h>
 #include <net/if_media.h>
 #include <net/if_types.h>
-#include <net/bpf.h>
 #include <net/ethernet.h>
+#include <net/bpf.h>
 #include <net/if_bridgevar.h>
-
-#include <net/if_arp.h>
 #include <net/if_llatbl.h>
 
 /*
- * Service Access Point for interface cloner.
+ * Used at tx-path.
+ */
+#define M_VETHER 	M_UNUSED_8
+
+/*
+ * Service Acces Point [SAP] for if_bridge(4).
+ */
+static	struct mbuf *(*vether_bridge_input_p)(struct ifnet *, 
+	struct mbuf *);
+static	int (*vether_bridge_output_p)(struct ifnet *, struct mbuf *,
+		struct sockaddr *, struct rtentry *);
+
+/*
+ * SAP for interface cloner.
  */
 static int	vether_clone_create(struct if_clone *, int, caddr_t);
 static void 	vether_clone_destroy(struct ifnet *);
@@ -172,6 +185,61 @@ static void 	vether_media_status(struct ifnet *, struct ifmediareq *);
 static int 	vether_ioctl(struct ifnet *, u_long, caddr_t);
 
 /*
+ * Module event handler.
+ */
+static int
+vether_mod_event(module_t mod, int event, void *data)
+{
+	int error = 0;
+ 
+	switch (event) {
+	case MOD_LOAD:
+		mtx_init(&vether_list_mtx, "if_vether_list", NULL, MTX_DEF);
+		vether_cloner = if_clone_simple(vether_name,
+			vether_clone_create, vether_clone_destroy, 0);
+/*
+ * Hook up SAP for I/O on if_bridge(4).
+ */
+		vether_bridge_input_p = bridge_input_p;
+		bridge_input_p = vether_bridge_input;
+		
+		vether_bridge_output_p = bridge_output_p;
+		bridge_output_p = vether_bridge_output;
+		
+		break;
+	case MOD_UNLOAD:	
+/*
+ * Remove wrapper at hooks.
+ */	
+		bridge_output_p = vether_bridge_output_p;
+		vether_bridge_output_p = NULL;
+
+		bridge_input_p = vether_bridge_input_p;
+		vether_bridge_input_p = NULL;
+	
+		if_clone_detach(vether_cloner);
+		mtx_destroy(&vether_list_mtx);
+		
+		break;
+	default:
+		error = EOPNOTSUPP;
+	}
+ 
+	return (error);
+} 
+
+/*
+ * Module desccription.
+ */
+static moduledata_t vether_mod = {
+	"if_vether",
+	vether_mod_event,
+	0
+};
+DECLARE_MODULE(if_vether, vether_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
+MODULE_DEPEND(if_vether, ether, 1, 1, 1);
+
+/*
  * Ctor.
  */
 static int
@@ -184,7 +252,8 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 /*
  * Allocate software context.
  */ 
-	sc = malloc(sizeof(struct vether_softc), M_DEVBUF, M_WAITOK|M_ZERO);
+	sc = malloc(sizeof(struct vether_softc), 
+		M_DEVBUF, M_WAITOK|M_ZERO); 	/* can't fail */
 	ifp = sc->sc_ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		free(sc, M_DEVBUF);
@@ -228,10 +297,9 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
  */
 	lla[5] = (uint8_t)unit; 
 /*
- * Initialize ethernet specific attributes and perform inclusion 
- * mapping on link layer, netgraph(4) domain and generate by bpf(4) 
- * implemented Inspection Access Point maps to by ifnet(9) defined 
- * generic interface.
+ * Initialize ethernet specific attributes, perform 
+ * inclusion mapping on link layer and finally by 
+ * bpf(4) implemented Inspection Access Point [IAP].
  */ 	
  	ether_ifattach(ifp, lla);
  	ifp->if_baudrate = 0;
@@ -279,6 +347,53 @@ vether_clone_destroy(struct ifnet *ifp)
 }
  
 /*
+ * Media types can't be changed.
+ */
+static int
+vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+{
+	struct vether_softc *sc = ifp->if_softc;	
+	struct ifreq *ifr = (struct ifreq *)data;
+	int error = 0;
+ 
+	switch (cmd) {
+	case SIOCSIFMTU:
+		if (ifr->ifr_mtu > ETHER_MAX_LEN_JUMBO) 
+			error = EINVAL;
+		else 
+			ifp->if_mtu = ifr->ifr_mtu;	
+		break;
+	case SIOCSIFMEDIA:
+	case SIOCGIFMEDIA:
+		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifm, cmd);
+		break;
+	case SIOCSIFFLAGS:
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	case SIOCSIFPHYS:
+		error = EOPNOTSUPP;
+		break;
+	default:
+		error = ether_ioctl(ifp, cmd, data);
+		break;
+	}
+	return (error);
+} 
+static int
+vether_media_change(struct ifnet *ifp)
+{
+	return (0);
+}
+ 
+static void
+vether_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
+{
+	ifmr->ifm_active = IFM_ETHER|IFM_AUTO;
+	ifmr->ifm_status = IFM_AVALID|IFM_ACTIVE;
+} 
+ 
+/*
  * Initializes interface.
  */
 static void
@@ -320,14 +435,13 @@ vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
 	struct ether_header *eh;
 	
 	if ((bifp = ifp->if_bridge) == NULL)
-		return (m)
+		return (m);
 	
 	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
 		return (m);
 /*
- * Push back any by if_vether(4) received frame
- * for local processing. Those kind of interfaces
- * are designed to operate as data sink.
+ * Push back any by if_vether(4) received frame for 
+ * local processing, because it oparates as data sink.
  */
 	if (ifp->if_flags & IFF_VETHER) {
 		eh = mtod(m, struct ether_header *);
@@ -337,24 +451,18 @@ vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
 		if (memcmp(IF_LLADDR(ifp), 
 			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
 			m_freem(m);
-			
-			log(LOG_KERN, "%s: vether: eh->ether_shost", __func__);
-			
 			return (NULL);
 		}
-		
-		log(LOG_KERN, "%s: vether: rx'd @ ether_input_internal", __func__);
-		
 		return (m);		
 	}
 	
-	return (bridge_output(ifp, m, NULL, NULL));
+	return ((*vether_bridge_input_p)(ifp, m));
 }
 
 /*
- * Any frame still passes if_vether(4) is 
- * marked by M_PROTO2 flag for internal
- * processing by if_vether(4); 
+ * Any frame tx'd by layer above on if_vether(4) is 
+ * marked by M_VETHER flag for internal processing 
+ * by if_transmit(9) wrapping vether_start. 
  */
 static int 
 vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
@@ -367,10 +475,15 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 			return (0);
 	}
 
-	if (ifp->if_flags & IFF_VETHER)
-		m->m_flags |= M_PROTO2;
+	if (ifp->if_flags & IFF_VETHER) {
+/*		
+ * Frame was emmited by ether_output{_frame}(9).
+ */ 		
+		if (m->m_pkthdr.rcvif == NULL) 		
+			m->m_flags |= M_VETHER;	
+	}
 	
-	return (bridge_output(ifp, m, sa, rt));
+	return ((*vether_bridge_output_p)(ifp, m, sa, rt));
 } 
  
 static void
@@ -395,104 +508,59 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL) 
 			break;
+
+		if ((m->m_flags & M_PKTHDR) == 0) {
+			m_freem(m);
+			continue;
+		}
+/* 
+ * Discard any frame, if not member of if_bridge(4).
+ */				
+		if (ifp->if_bridge == NULL) {
+			m_freem(m);
+			continue;
+		}
 /*
- * ...
+ * Three cases are considered here:
+ * 
+ *  (a) Frame was tx'd by layer above.
+ * 
+ *  (b) Frame was rx'd by link-layer.
+ * 
+ *  (c) Data sink.
+ */ 				
+		if (m->m_pkthdr.rcvif == NULL) {			
+/*
+ * IAP for transmission.
+ */				
+			BPF_MTAP(ifp, m);	
+
+			if (m->m_flags & M_VETHER) {
+/*		
+ * Frame was processed by if_bridge(4). 
+ */ 			
+				m_freem(m);
+			} else {
+				m->m_pkthdr.rcvif = ifp; 
+/*
+ * Broadcast frame by if_bridge(4).
  */
-
-
+				(void)(*bridge_output_p)
+						(ifp, m, NULL, NULL);
+			}	
+		} else if (m->m_pkthdr.rcvif != ifp) {
+			m->m_pkthdr.rcvif = ifp;
+			m->m_flags &= ~M_VETHER;
+/*
+ * Demultiplex any other frame.
+ */	
+			(*ifp->if_input)(ifp, m);
+		} else {			
+/*
+ * Discard any duplicated frame.
+ */ 		
+			m_freem(m);
+		}
 	}								
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 }
-
-/*
- * Media types can't be changed.
- */
-static int
-vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
-{
-	struct vether_softc *sc = ifp->if_softc;	
-	struct ifreq *ifr = (struct ifreq *)data;
-	int error = 0;
- 
-	switch (cmd) {
-	case SIOCSIFMTU:
-		if (ifr->ifr_mtu > ETHER_MAX_LEN_JUMBO) 
-			error = EINVAL;
-		else 
-			ifp->if_mtu = ifr->ifr_mtu;	
-		break;
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifm, cmd);
-		break;
-	case SIOCSIFFLAGS:
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		break;
-	case SIOCSIFPHYS:
-		error = EOPNOTSUPP;
-		break;
-	default:
-		error = ether_ioctl(ifp, cmd, data);
-		break;
-	}
-	return (error);
-} 
-
-static int
-vether_media_change(struct ifnet *ifp)
-{
-	return (0);
-}
- 
-static void
-vether_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
-{
-	ifmr->ifm_active = IFM_ETHER|IFM_AUTO;
-	ifmr->ifm_status = IFM_AVALID|IFM_ACTIVE;
-}
-
-/*
- * Module event handler.
- */
-static int
-vether_mod_event(module_t mod, int event, void *data)
-{
-	int error = 0;
- 
-	switch (event) {
-	case MOD_LOAD:
-		mtx_init(&vether_list_mtx, "if_vether_list", NULL, MTX_DEF);
-		vether_cloner = if_clone_simple(vether_name,
-			vether_clone_create, vether_clone_destroy, 0);
-/*
- * Hook up Service Access Point for I/O on if_bridge(4).
- */
-		bridge_input_p = bridge_input;
-		bridge_output_p = bridge_output;
-
-		break;
-	case MOD_UNLOAD:	
-/*
- * Remove wrapper at hooks.
- */	
-		bridge_input_p = bridge_input;
-		bridge_output_p = bridge_output;
-	
-		if_clone_detach(vether_cloner);
-		mtx_destroy(&vether_list_mtx);
-		break;
-	default:
-		error = EOPNOTSUPP;
-	}
- 
-	return (error);
-} 
- 
-static moduledata_t vether_mod = {
-	"if_vether",
-	vether_mod_event,
-	0
-};
-DECLARE_MODULE(if_vether, vether_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
-MODULE_DEPEND(if_vether, ether, 1, 1, 1);
