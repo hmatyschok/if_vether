@@ -428,42 +428,6 @@ vether_stop(struct ifnet *ifp, int disable)
  * I/O.
  */
 
-static	struct mbuf *
-vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
-{
-	struct ifnet *bifp;
-	struct ether_header *eh;
-	
-	if ((bifp = ifp->if_bridge) == NULL)
-		return (m);
-	
-	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
-		return (m);
-/*
- * Push back any by if_vether(4) received frame for 
- * local processing, because it oparates as data sink.
- */
-	if (ifp->if_flags & IFF_VETHER) {
-		eh = mtod(m, struct ether_header *);
-/*
- * If we sent out, discard. 
- */
-		if (memcmp(IF_LLADDR(ifp), 
-			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
-			m_freem(m);
-			return (NULL);
-		}
-		return (m);		
-	}
-	
-	return ((*vether_bridge_input_p)(ifp, m));
-}
-
-/*
- * Any frame tx'd by layer above on if_vether(4) is 
- * marked by M_VETHER flag for internal processing 
- * by if_transmit(9) wrapping vether_start. 
- */
 static int 
 vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 		struct sockaddr *sa, struct rtentry *rt)
@@ -474,7 +438,11 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 		if (m == NULL)
 			return (0);
 	}
-
+/*
+ * Any frame tx'd by layer above on if_vether(4) is 
+ * marked by M_VETHER flag for internal processing 
+ * by if_transmit(9) wrapping vether_start. 
+ */
 	if (ifp->if_flags & IFF_VETHER) {
 /*		
  * Frame was emmited by ether_output{_frame}(9).
@@ -539,7 +507,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 /*		
  * Frame was processed by if_bridge(4). 
  */ 			
-				m_freem(m);
+				(*ifp->if_input)(ifp, m);
 			} else {
 				m->m_pkthdr.rcvif = ifp; 
 /*
@@ -550,7 +518,6 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 			}	
 		} else if (m->m_pkthdr.rcvif != ifp) {
 			m->m_pkthdr.rcvif = ifp;
-			m->m_flags &= ~M_VETHER;
 /*
  * Demultiplex any other frame.
  */	
@@ -563,4 +530,37 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 		}
 	}								
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
+}
+
+static	struct mbuf *
+vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ifnet *bifp;
+	struct ether_header *eh;
+	
+	if ((bifp = ifp->if_bridge) == NULL)
+		return (m);
+	
+	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
+		return (m);
+/*
+ * Push back any by if_vether(4) received frame for 
+ * local processing, because it oparates as data sink.
+ */
+	if (ifp->if_flags & IFF_VETHER) {
+		eh = mtod(m, struct ether_header *);
+/*
+ * If we sent out, discard. 
+ */
+		if (memcmp(IF_LLADDR(ifp), 
+			eh->ether_shost, ETHER_ADDR_LEN) == 0) {
+			m_freem(m);
+			return (NULL);
+		}
+		m->m_flags &= ~M_VETHER;
+		
+		return (m);		
+	}
+	
+	return ((*vether_bridge_input_p)(ifp, m));
 }
