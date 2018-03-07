@@ -497,7 +497,8 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * 
  *  (c) Data sink.
  */ 				
-		if (m->m_pkthdr.rcvif == NULL) {			
+		if (m->m_pkthdr.rcvif == NULL) {
+			m->m_pkthdr.rcvif = ifp;			
 /*
  * IAP for transmission.
  */				
@@ -508,8 +509,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * Frame was processed by if_bridge(4). 
  */ 			
 				(*ifp->if_input)(ifp, m);
-			} else {
-				m->m_pkthdr.rcvif = ifp; 
+			} else { 
 /*
  * Broadcast frame by if_bridge(4).
  */
