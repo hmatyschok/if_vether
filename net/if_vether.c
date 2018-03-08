@@ -458,16 +458,15 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 			return (0);
 	}
 /*
- * Any frame tx'd by layer above on if_vether(4) is 
- * marked by M_VETHER flag for internal processing 
- * by if_transmit(9) wrapping vether_start. 
+ * Any frame tx'd by layer above is marked by 
+ * M_VETHER flag for internal processing by 
+ * if_transmit(9) wrapping vether_start. 
  */
-	if (ifp->if_flags & IFF_VETHER) {
+	if (m->m_pkthdr.rcvif == NULL) {
 /*		
  * Frame was emmited by ether_output{_frame}(9).
  */ 		
-		if (m->m_pkthdr.rcvif == NULL) 		
-			m->m_flags |= M_VETHER;
+		m->m_flags |= M_VETHER;
 	}
 	
 	return ((*vether_bridge_output_p)(ifp, m, sa, rt));
