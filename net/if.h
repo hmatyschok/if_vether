@@ -166,7 +166,7 @@ struct if_data {
 #define	IFF_DEBUG	0x4		/* (n) turn on debugging */
 #define	IFF_LOOPBACK	0x8		/* (i) is a loopback net */
 #define	IFF_POINTOPOINT	0x10		/* (i) is a point-to-point link */
-/*			0x20		   was IFF_SMART */
+#define	IFF_VETHER	0x20		/* (i) instance of if_vether(4) */
 #define	IFF_DRV_RUNNING	0x40		/* (d) resources allocated */
 #define	IFF_NOARP	0x80		/* (n) no address resolution protocol */
 #define	IFF_PROMISC	0x100		/* (n) receive all packets */
@@ -184,11 +184,6 @@ struct if_data {
 #define	IFF_STATICARP	0x80000		/* (n) static ARP */
 #define	IFF_DYING	0x200000	/* (n) interface is winding down */
 #define	IFF_RENAMING	0x400000	/* (n) interface is being renamed */
-
-/*
- * Extension, indicates instance of if_vether(4).
- */
-#define	IFF_VETHER	0x800000		/* (i) instance of if_vether(4) */
 
 /*
  * Old names for driver flags so that user space tools can continue to use
