@@ -65,9 +65,15 @@
 #include <net/if_llatbl.h>
 
 /*
- * Used at tx-path.
+ * Used for tx / rx-path.
  */
 #define M_VETHER 	M_UNUSED_8
+
+
+#define VETHER_IF_FLAGS 	\
+	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER)
+#define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
+#define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
 /*
  * Service Acces Point [SAP] for if_bridge(4).
@@ -78,7 +84,7 @@ static	int (*vether_bridge_output_p)(struct ifnet *, struct mbuf *,
 		struct sockaddr *, struct rtentry *);
 
 /*
- * SAP for interface cloner.
+ * SAP for if_clone(4) facility.
  */
 static int	vether_clone_create(struct if_clone *, int, caddr_t);
 static void 	vether_clone_destroy(struct ifnet *);
@@ -173,7 +179,6 @@ struct vether_softc {
 	struct mtx	sc_mtx;	
 	struct ifmedia	sc_ifm;		/* fake media information */
 	int	sc_status;
-	LIST_ENTRY(vether_softc) vether_list;
 };
 #define	VETHER_LOCK_INIT(sc) \
 	mtx_init(&(sc)->sc_mtx, "vether softc",	NULL, MTX_DEF)
@@ -181,14 +186,6 @@ struct vether_softc {
 #define	VETHER_LOCK(sc)		mtx_lock(&(sc)->sc_mtx)
 #define	VETHER_UNLOCK(sc)		mtx_unlock(&(sc)->sc_mtx)
 #define	VETHER_LOCK_ASSERT(sc)	mtx_assert(&(sc)->sc_mtx, MA_OWNED)	
-
-static LIST_HEAD(, vether_softc) vether_list;
-static struct mtx vether_list_mtx;
-
-#define VETHER_IF_FLAGS 	\
-	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER)
-#define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
-#define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
 static	struct mbuf *vether_bridge_input(struct ifnet *, struct mbuf *);
 static	int vether_bridge_output(struct ifnet *, struct mbuf *,
@@ -213,7 +210,6 @@ vether_mod_event(module_t mod, int event, void *data)
  
 	switch (event) {
 	case MOD_LOAD:
-		mtx_init(&vether_list_mtx, "if_vether_list", NULL, MTX_DEF);
 		vether_cloner = if_clone_simple(vether_name,
 			vether_clone_create, vether_clone_destroy, 0);
 /*
@@ -237,7 +233,6 @@ vether_mod_event(module_t mod, int event, void *data)
 		vether_bridge_input_p = NULL;
 	
 		if_clone_detach(vether_cloner);
-		mtx_destroy(&vether_list_mtx);
 		
 		break;
 	default:
@@ -322,10 +317,6 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
  */ 	
  	ether_ifattach(ifp, lla);
  	ifp->if_baudrate = 0;
- 
-	mtx_lock(&vether_list_mtx);
-	LIST_INSERT_HEAD(&vether_list, sc, vether_list);
-	mtx_unlock(&vether_list_mtx);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	error = 0;
@@ -347,11 +338,7 @@ vether_clone_destroy(struct ifnet *ifp)
 	vether_stop(ifp, 1);
 	
 	ifp->if_flags &= ~IFF_UP;	
-	VETHER_UNLOCK(sc);		
-
-	mtx_lock(&vether_list_mtx);
-	LIST_REMOVE(sc, vether_list);
-	mtx_unlock(&vether_list_mtx);	
+	VETHER_UNLOCK(sc);	
 /*
  * Inverse element of ether_ifattach.
  */
@@ -464,7 +451,7 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
  */
 	if (m->m_pkthdr.rcvif == NULL) {
 /*		
- * Frame was emmited by ether_output{_frame}(9).
+ * Frame was emmited by ether_output(9).
  */ 		
 		m->m_flags |= M_VETHER;
 	}
