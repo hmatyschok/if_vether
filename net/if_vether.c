@@ -66,10 +66,9 @@
 #include <net/if_llatbl.h>
 
 /*
- * Used for tx / rx-path.
+ * Used for tx- / rx-path.
  */
 #define M_VETHER 	M_UNUSED_8
-
 
 #define VETHER_IF_FLAGS 	\
 	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER)
@@ -519,7 +518,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 /*
  * Broadcast frame by if_bridge(4).
  */
-				(void)(*bridge_output_p)
+				(void)(*vether_bridge_output_p)
 						(ifp, m, NULL, NULL);
 			}	
 		} else if (m->m_pkthdr.rcvif != ifp) {
