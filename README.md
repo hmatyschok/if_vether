@@ -96,7 +96,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
                \ /
                 + vether_bridge_output(), annotates tx'd frame
                 |
-                |     if (ifp->if_flags & IFF_VETHER)
+                |     if (m->m_pkthdr.rcvif == NULL)
    	            |         m->m_flags |= M_VETHER;
                 |
                 | 

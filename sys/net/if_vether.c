@@ -119,7 +119,7 @@ static const char vether_name[] = "vether";
  *            \ /
  *             + vether_bridge_output(), annotates tx'd frame
  *             |
- *             |     if (ifp->if_flags & IFF_VETHER)
+ *             |     if (m->m_pkthdr.rcvif == NULL)
  *	           |         m->m_flags |= M_VETHER;
  *             |
  *             | 
@@ -210,28 +210,27 @@ vether_mod_event(module_t mod, int event, void *data)
  
 	switch (event) {
 	case MOD_LOAD:
-		vether_cloner = if_clone_simple(vether_name,
-			vether_clone_create, vether_clone_destroy, 0);
 /*
  * Hook up SAP for I/O on if_bridge(4).
- */
+ */ 
 		vether_bridge_input_p = bridge_input_p;
 		bridge_input_p = vether_bridge_input;
 		
 		vether_bridge_output_p = bridge_output_p;
 		bridge_output_p = vether_bridge_output;
-		
+/*
+ * Attach if_cloner(4).
+ */		
+		vether_cloner = if_clone_simple(vether_name,
+			vether_clone_create, vether_clone_destroy, 0);
 		break;
 	case MOD_UNLOAD:	
 /*
  * Remove wrapper at hooks.
- */	
-		bridge_output_p = vether_bridge_output_p;
-		vether_bridge_output_p = NULL;
-
-		bridge_input_p = vether_bridge_input_p;
+ */
 		vether_bridge_input_p = NULL;
-	
+		vether_bridge_output_p = NULL;
+		
 		if_clone_detach(vether_cloner);
 		
 		break;
@@ -251,7 +250,7 @@ static moduledata_t vether_mod = {
 	0
 };
 DECLARE_MODULE(if_vether, vether_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
-MODULE_DEPEND(if_vether, ether, 1, 1, 1);
+MODULE_DEPEND(if_vether, if_bridge, 1, 1, 1);
 
 /*
  * Ctor.
@@ -439,11 +438,6 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 		struct sockaddr *sa, struct rtentry *rt)
 {
 	
-	if (m->m_len < ETHER_HDR_LEN) {
-		m = m_pullup(m, ETHER_HDR_LEN);
-		if (m == NULL)
-			return (0);
-	}
 /*
  * Any frame tx'd by layer above is marked by 
  * M_VETHER flag for internal processing by 
@@ -502,19 +496,19 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * 
  *  (c) Data sink.
  */ 				
-		if (m->m_pkthdr.rcvif == NULL) {
-			m->m_pkthdr.rcvif = ifp;			
+		if (m->m_pkthdr.rcvif == NULL) {			
+			m->m_pkthdr.rcvif = ifp;				
 /*
  * IAP for transmission.
  */				
 			BPF_MTAP(ifp, m);	
 
-			if (m->m_flags & M_VETHER) {
+			if (m->m_flags & M_VETHER) {							
 /*		
  * Frame was processed by if_bridge(4). 
  */ 			
 				(*ifp->if_input)(ifp, m);
-			} else { 
+			} else {			 
 /*
  * Broadcast frame by if_bridge(4).
  */
@@ -522,12 +516,12 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 						(ifp, m, NULL, NULL);
 			}	
 		} else if (m->m_pkthdr.rcvif != ifp) {
-			m->m_pkthdr.rcvif = ifp;
+			m->m_pkthdr.rcvif = ifp;			
 /*
  * Demultiplex any other frame.
  */	
 			(*ifp->if_input)(ifp, m);
-		} else {			
+		} else {					
 /*
  * Discard any duplicated frame.
  */ 		
@@ -540,14 +534,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 static	struct mbuf *
 vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
 {
-	struct ifnet *bifp;
 	struct ether_header *eh;
-	
-	if ((bifp = ifp->if_bridge) == NULL)
-		return (m);
-	
-	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
-		return (m);
 /*
  * Push back any by if_vether(4) received frame for 
  * local processing, because it oparates as data sink.
@@ -563,7 +550,7 @@ vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
 			return (NULL);
 		}
 		m->m_flags &= ~M_VETHER;
-		
+
 		return (m);		
 	}
 	
