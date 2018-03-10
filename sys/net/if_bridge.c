@@ -158,6 +158,18 @@ __FBSDID("$FreeBSD: releng/11.1/sys/net/if_bridge.c 313050 2017-02-01 20:27:38Z 
 #include <net/route.h>
 
 #ifdef PPPOE_PFIL
+
+/*
+ * PPPoE [rfc-2516] header
+ */
+struct pppoe_hdr{
+	u_int8_t 	ph_ver:4;
+	u_int8_t 	ph_type:4;
+	u_int8_t 	ph_code;
+	u_int16_t 	ph_sid;
+	u_int16_t 	ph_length;
+}__packed;
+
 /*
  * Protocol field values are from net/ppp_defs.h
  */
