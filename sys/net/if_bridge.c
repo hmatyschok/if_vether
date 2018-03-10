@@ -2014,6 +2014,11 @@ static void
 bridge_dummynet(struct mbuf *m, struct ifnet *ifp)
 {
 	struct bridge_softc *sc;
+#ifdef PPPOE_PFIL
+	struct ether_header eh;
+	struct m_tag_pppoe *mtp; 
+	int dn_passed;
+#endif /* PPPOE_PFIL */	
 
 	sc = ifp->if_bridge;
 
@@ -2037,6 +2042,44 @@ bridge_dummynet(struct mbuf *m, struct ifnet *ifp)
 		if (m == NULL)
 			return;
 	}
+#ifdef PPPOE_PFIL	
+	if ((mtp = (struct m_tag_pppoe *)
+		m_tag_locate(m, MTAG_PPPOE, 
+			MTAG_PPPOE_PCI, NULL)) != NULL) {
+/*
+ * Backup Protocol Control Information [PCI] and strip off.
+ */	
+		m_copydata(m, 0, ETHER_HDR_LEN, (caddr_t) &eh);
+		m_adj(m, ETHER_HDR_LEN);
+/*
+ * Prepend rfc-1661 PCI.
+ */	
+		M_PREPEND(m, sizeof(uint16_t), M_NOWAIT);
+		if (m == NULL)
+			return;
+		
+		bcopy(&mtp->mtp_pr, mtod(m, caddr_t), sizeof(uint16_t));
+/*
+ * Restore rfc-2516 PCI.
+ */	
+		M_PREPEND(m, sizeof(struct pppoe_hdr), M_NOWAIT);
+		if (m == NULL)
+			return;
+			
+		bcopy(&mtp->mtp_ph, mtod(m, caddr_t), 
+			sizeof(struct pppoe_hdr));
+/*
+ * Restore former Ethernet protocol id and prepend.
+ */	
+		eh1.ether_type = htons(ETHERTYPE_PPPOE);
+		M_PREPEND(m, ETHER_HDR_LEN, M_NOWAIT);
+		if (m == NULL)
+			return;
+			
+		bcopy(&eh, mtod(m, caddr_t), ETHER_HDR_LEN);
+		m_tag_delete(m, &mtp->mtp_tag);
+	}
+#endif /* PPPOE_PFIL */	
 
 	bridge_enqueue(sc, ifp, m);
 }
@@ -3202,7 +3245,6 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 			snap = 1;
 		}
 	}
-
 /*
  * If we're trying to filter if_bridge(4) traffic, don't look at
  * anything other than IP and ARP traffic. If the filter doesn't 
@@ -3446,7 +3488,7 @@ pass:
 
 		bcopy(&mtp->mtp_pr, mtod(*mp, caddr_t), sizeof(uint16_t));
 /*
- * Prepend rfc-2516 pci. 
+ * Prepend rfc-2516 header. 
  */			
 		M_PREPEND(*mp, sizeof(struct pppoe_hdr), M_NOWAIT);
 		if (*mp == NULL)
@@ -3471,7 +3513,7 @@ pass:
 		goto out1;
 
 	bcopy(&eh2, mtod(*mp, caddr_t), ETHER_HDR_LEN);
-	
+
 /* 
  * Default error if not error == 0 
  */
@@ -3649,31 +3691,85 @@ bad:
  *	Fragment mbuf chain in multiple packets and prepend ethernet header.
  */
 static int
-bridge_fragment(struct ifnet *ifp, struct mbuf **mp, struct ether_header *eh,
-    int snap, struct llc *llc)
+bridge_fragment(struct ifnet *ifp, struct mbuf **mp, 
+	struct ether_header *eh, int snap, struct llc *llc)
 {
 	struct mbuf *m = *mp, *nextpkt = NULL, *mprev = NULL, *mcur = NULL;
-	struct ip *ip;
-	int error = -1;
+		struct ip *ip;
+#ifdef PPPOE_PFIL
+	struct m_tag_pppoe *mtp;
+#endif /* PPPOE_PFIL */
+	int error = -1, mtu;
 
 	if (m->m_len < sizeof(struct ip) &&
 	    (m = m_pullup(m, sizeof(struct ip))) == NULL)
 		goto dropit;
+	
 	ip = mtod(m, struct ip *);
 
 	m->m_pkthdr.csum_flags |= CSUM_IP;
-	error = ip_fragment(ip, &m, ifp->if_mtu, ifp->if_hwassist);
+	
+	mtu = ifp->if_mtu;
+	
+#ifdef PPPOE_PFIL	
+/*
+ * Locate and fetch m_tag(9).
+ */
+	if ((mtp = (struct m_tag_pppoe *)
+		m_tag_locate(m, MTAG_PPPOE, 
+			MTAG_PPPOE_PCI, NULL)) != NULL) {								
+		m_tag_unlink(m, mtp);
+/*
+ * Re-calculate MTU in sight of rfc-2516 / -1661 related PCI.
+ */					
+		mtu -= sizeof(struct pppoe_hdr); 
+		mtu -= sizeof(uint16_t);		
+	} 
+#endif /* PPPOE_PFIL */	
+
+	error = ip_fragment(ip, &m, mtu, ifp->if_hwassist);
 	if (error)
 		goto dropit;
-
-	/*
-	 * Walk the chain and re-add the Ethernet header for
-	 * each mbuf packet.
-	 */
+/*
+ * Walk the chain and re-add the Ethernet header for
+ * each mbuf(9) packet.
+ */
 	for (mcur = m; mcur; mcur = mcur->m_nextpkt) {
 		nextpkt = mcur->m_nextpkt;
 		mcur->m_nextpkt = NULL;
-		if (snap) {
+
+#ifdef PPPOE_PFIL
+		if (mtp != NULL) {
+/*
+ * Prepend rfc-1661 protocol id. 
+ */	
+			M_PREPEND(mcur, sizeof(uint16_t), M_NOWAIT);
+			if (mcur == NULL) {
+				error = ENOBUFS;
+				if (mprev != NULL)
+					mprev->m_nextpkt = nextpkt;
+				goto dropit;
+			}
+			bcopy(&mtp->mtp_pr, mtod(mcur, caddr_t), 
+				sizeof(uint16_t));
+/*
+ * Prepend rfc-2516 header. 
+ */			
+			M_PREPEND(mcur, sizeof(struct pppoe_hdr), M_NOWAIT);
+			if (mcur == NULL) {
+				error = ENOBUFS;
+				if (mprev != NULL)
+					mprev->m_nextpkt = nextpkt;
+				goto dropit;
+			}	
+			bcopy(&mtp->mtp_ph, mtod(mcur, caddr_t), 
+				sizeof(struct pppoe_hdr));
+		
+			eh->ether_type = htons(ETHERTYPE_PPPOE);
+		}
+#endif /* PPPOE_PFIL */
+
+		if (snap != 0) {
 			M_PREPEND(mcur, sizeof(struct llc), M_NOWAIT);
 			if (mcur == NULL) {
 				error = ENOBUFS;
@@ -3692,32 +3788,41 @@ bridge_fragment(struct ifnet *ifp, struct mbuf **mp, struct ether_header *eh,
 			goto dropit;
 		}
 		bcopy(eh, mtod(mcur, caddr_t), ETHER_HDR_LEN);
-
-		/*
-		 * The previous two M_PREPEND could have inserted one or two
-		 * mbufs in front so we have to update the previous packet's
-		 * m_nextpkt.
-		 */
+/*
+ * The previous two M_PREPEND could have inserted one or two
+ * mbufs in front so we have to update the previous packet's
+ * m_nextpkt.
+ */
 		mcur->m_nextpkt = nextpkt;
 		if (mprev != NULL)
 			mprev->m_nextpkt = mcur;
 		else {
-			/* The first mbuf in the original chain needs to be
-			 * updated. */
+/* 
+ * The first mbuf(9) in the original chain needs to be updated. 
+ */
 			*mp = mcur;
 		}
 		mprev = mcur;
 	}
-
 	KMOD_IPSTAT_INC(ips_fragmented);
+	
+out:
+#ifdef PPPOE_PFIL
+	if (mtp != NULL)
+		m_tag_free(&mtp->mtp_tag);
+#endif /* PPPOE_PFIL */
+
 	return (error);
 
 dropit:
-	for (mcur = *mp; mcur; mcur = m) { /* droping the full packet chain */
+	for (mcur = *mp; mcur; mcur = m) {
+/* 
+ * Droping the full packet chain 
+ */		 
 		m = mcur->m_nextpkt;
 		m_freem(mcur);
 	}
-	return (error);
+	goto out;
 }
 
 static void
