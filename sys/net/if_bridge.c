@@ -169,7 +169,8 @@ __FBSDID("$FreeBSD: releng/11.1/sys/net/if_bridge.c 313050 2017-02-01 20:27:38Z 
 #endif /* INET6 */
 
 /*
- * Holds copy of rfc-2516 PCI where IPv[46] PDU is mapped.  
+ * Holds copy of Protocol Control Information [PCI] for 
+ * rfc-2516 maps to IPv[46] Protocol Data Unit [PDU].  
  */
 struct m_tag_pppoe {
 	struct m_tag	mtp_tag;
@@ -3164,31 +3165,32 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	u_int16_t ether_type;
 
 	snap = 0;
-	error = -1;	/* Default error if not error == 0 */
 
 #if 0
-	/* we may return with the IP fields swapped, ensure its not shared */
+/* 
+ * We may return with the IP fields swapped, ensure its not shared. 
+ */
 	KASSERT(M_WRITABLE(*mp), ("%s: modifying a shared mbuf", __func__));
 #endif
 
 	if (V_pfil_bridge == 0 && V_pfil_member == 0 && V_pfil_ipfw == 0)
-		return (0); /* filtering is disabled */
+		goto out1; 	/* filtering is disabled */
 
 	i = min((*mp)->m_pkthdr.len, max_protohdr);
 	if ((*mp)->m_len < i) {
 	    *mp = m_pullup(*mp, i);
 	    if (*mp == NULL) {
-		printf("%s: m_pullup failed\n", __func__);
-		return (-1);
+			(void)printf("%s: m_pullup failed\n", __func__);
+			goto bad1; 	/* See #953 @ kern/kern_mbuf.c */
 	    }
 	}
 
 	eh1 = mtod(*mp, struct ether_header *);
 	ether_type = ntohs(eh1->ether_type);
 
-	/*
-	 * Check for SNAP/LLC.
-	 */
+/*
+ * Check for SNAP/LLC.
+ */
 	if (ether_type < ETHERMTU) {
 		struct llc *llc2 = (struct llc *)(eh1 + 1);
 
@@ -3201,61 +3203,67 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 		}
 	}
 
-	/*
-	 * If we're trying to filter bridge traffic, don't look at anything
-	 * other than IP and ARP traffic.  If the filter doesn't understand
-	 * IPv6, don't allow IPv6 through the bridge either.  This is lame
-	 * since if we really wanted, say, an AppleTalk filter, we are hosed,
-	 * but of course we don't have an AppleTalk filter to begin with.
-	 * (Note that since pfil doesn't understand ARP it will pass *ALL*
-	 * ARP traffic.)
-	 */
+/*
+ * If we're trying to filter if_bridge(4) traffic, don't look at
+ * anything other than IP and ARP traffic. If the filter doesn't 
+ * understand IPv6, don't allow IPv6 through if_bridge(4) either. 
+ * 
+ * This is lame since if we really wanted, say, an AppleTalk filter, 
+ * we are hosed, but of course we don't have an AppleTalk filter to 
+ * begin with. 
+ * 
+ * Note that since pfil(9) doesn't understand ARP it will pass *ALL* 
+ * ARP traffic.
+ */
 	switch (ether_type) {
 		case ETHERTYPE_ARP:
 		case ETHERTYPE_REVARP:
 			if (V_pfil_ipfw_arp == 0)
-				return (0); /* Automatically pass */
+				goto out1; /* Automatically pass */
 			break;
 #ifdef PPPOE_PFIL
 	case ETHERTYPE_PPPOEDISC:
-		return (0); /* Automatically pass */
+		goto out1; /* Automatically pass */
 	case ETHERTYPE_PPPOE:
 	
 		if (pfil_pppoe == 0)
-			return (0);
+			goto out1;
 	
 #endif /* PPPOE_PFIL */
-		case ETHERTYPE_IP:
+		case ETHERTYPE_IP: 	/* FALLTHROUGH */
 #ifdef INET6
 		case ETHERTYPE_IPV6:
 #endif /* INET6 */
 			break;
 		default:
-			/*
-			 * Check to see if the user wants to pass non-ip
-			 * packets, these will not be checked by pfil(9) and
-			 * passed unconditionally so the default is to drop.
-			 */
-			if (V_pfil_onlyip)
-				goto bad;
+/*
+ * Check to see if the user wants to pass non-ip
+ * packets, these will not be checked by pfil(9) and
+ * passed unconditionally so the default is to drop.
+ */
+		if (V_pfil_onlyip != 0)
+			goto bad1;
 	}
-
-	/* Run the packet through pfil before stripping link headers */
+/* 
+ * Run the packet through pfil(9) before stripping link headers 
+ */
 	if (PFIL_HOOKED(&V_link_pfil_hook) && V_pfil_ipfw != 0 &&
 			dir == PFIL_OUT && ifp != NULL) {
 
 		error = pfil_run_hooks(&V_link_pfil_hook, mp, ifp, dir, NULL);
 
-		if (*mp == NULL || error != 0) /* packet consumed by filter */
-			return (error);
+		if (*mp == NULL || error != 0)
+			goto out; /* packet consumed by filter */
 	}
-
-	/* Strip off the Ethernet header and keep a copy. */
+/* 
+ * Strip off the Ethernet header and keep a copy.
+ */
 	m_copydata(*mp, 0, ETHER_HDR_LEN, (caddr_t) &eh2);
 	m_adj(*mp, ETHER_HDR_LEN);
-
-	/* Strip off snap header, if present */
-	if (snap) {
+/* 
+ * Strip off snap header, if present. 
+ */
+	if (snap != 0) {
 		m_copydata(*mp, 0, sizeof(struct llc), (caddr_t) &llc1);
 		m_adj(*mp, sizeof(struct llc));
 	}
@@ -3265,24 +3273,24 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
  */
 	if (ether_type == ETHERTYPE_PPPOE) {
 /*
- * Allocate MTAG_PPPOE. 
+ *  (a) Allocate MTAG_PPPOE or discard mbuf(9).
+ * 
+ *  (b) Backup and strip off rfc-2516 and rfc-1661 header.
+ * 
+ *  (c) Annotate mbuf(9).
  */
 		mtp = (struct m_tag_pppoe *)
 			m_tag_alloc(MTAG_PPPOE, MTAG_PPPOE_PCI, 
 						sizeof(struct m_tag_pppoe), M_NOWAIT);
  		if (mtp == NULL)
- 			goto bad;	
-/*
- * Backup and strip off rfc-2516 and rfc-1661 header.
- */	
+ 			goto bad1;	
+
 		m_copydata(*mp, 0, sizeof(struct pppoe_hdr), (caddr_t) &mtp->mtp_ph);
 		m_adj(*mp, sizeof(struct pppoe_hdr));
 		
 		m_copydata(*mp, 0, sizeof(uint16_t), (caddr_t) &mtp->mtp_pr);
 		m_adj(*mp, sizeof(uint16_t));
-/*
- * Annotate mbuf(9).
- */				
+				
  		m_tag_prepend(*mp, &mtp->mtp_tag);		
 /*
  * Relabel protocol id, as precondition for inspection.
@@ -3298,17 +3306,16 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 			break;		
 		default:
 /*
- * Bypass filtering, if sdu is not in AF_INET{6}.
- */		
-			error = 0;
-			goto out;
+ * Bypass filtering, if SDU is not in AF_INET{6}.
+ */
+			goto pass;
 		}			
 	}					
 #endif /* PPPOE_PFIL */	
 
-	/*
-	 * Check the IP header for alignment and errors
-	 */
+/*
+ * Check the IP header for alignment and errors
+ */
 	if (dir == PFIL_IN) {
 		switch (ether_type) {
 			case ETHERTYPE_IP:
@@ -3320,26 +3327,23 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 				break;
 #endif /* INET6 */
 			default:
-				error = 0;
+				break;
 		}
-		if (error)
+		if (error != 0)
 			goto bad;
 	}
-
-	error = 0;
-
-	/*
-	 * Run the packet through pfil
-	 */
+/*
+ * Run the packet through pfil(9).
+ */
 	switch (ether_type) {
 	case ETHERTYPE_IP:
-		/*
-		 * Run pfil on the member interface and the bridge, both can
-		 * be skipped by clearing pfil_member or pfil_bridge.
-		 *
-		 * Keep the order:
-		 *   in_if -> bridge_if -> out_if
-		 */
+/*
+ * Run pfil(9) on the member interface and if_bridge(4), both 
+ * can be skipped by clearing pfil_member or pfil_bridge.
+ *
+ * Keep the order:
+ *   in_if -> bridge_if -> out_if
+ */
 		if (V_pfil_bridge && dir == PFIL_OUT && bifp != NULL)
 			error = pfil_run_hooks(&V_inet_pfil_hook, mp, bifp,
 					dir, NULL);
@@ -3360,30 +3364,32 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 
 		if (*mp == NULL || error != 0) /* filter may consume */
 			break;
-
-		/* check if we need to fragment the packet */
-		/* bridge_fragment generates a mbuf chain of packets */
-		/* that already include eth headers */
+/* 
+ * Check if we need to fragment the packet, because 
+ * bridge_fragment generates a mbuf chain of packets
+ * that already include eth headers. 
+ */
 		if (V_pfil_member && ifp != NULL && dir == PFIL_OUT) {
 			i = (*mp)->m_pkthdr.len;
 			if (i > ifp->if_mtu) {
 				error = bridge_fragment(ifp, mp, &eh2, snap,
 					    &llc1);
-				return (error);
+				goto out;
 			}
 		}
-
-		/* Recalculate the ip checksum. */
+/* 
+ * Recalculate the ip checksum. 
+ */
 		ip = mtod(*mp, struct ip *);
 		hlen = ip->ip_hl << 2;
 		if (hlen < sizeof(struct ip))
-			goto bad;
+			goto bad1;
 		if (hlen > (*mp)->m_len) {
 			if ((*mp = m_pullup(*mp, hlen)) == NULL)
-				goto bad;
+				goto bad1;
 			ip = mtod(*mp, struct ip *);
 			if (ip == NULL)
-				goto bad;
+				goto bad1;
 		}
 		ip->ip_sum = 0;
 		if (hlen == sizeof(struct ip))
@@ -3419,21 +3425,17 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	}
 
 	if (*mp == NULL)
-		return (error);
+		goto out;
+		
 	if (error != 0)
 		goto bad;
-
-	error = -1;
-
-	/*
-	 * Finally, put everything back the way it was and return
-	 */
+/*
+ * Finally, put everything back the way it was and return.
+ */
 	 
 #ifdef PPPOE_PFIL
-out: 
-/*
- * Restore frame.
- */	
+pass:
+
 	if (ether_type == ETHERTYPE_PPPOE) {
 /*
  * Prepend rfc-1661 protocol id. 
@@ -3456,24 +3458,34 @@ out:
 	}
 #endif /* PPPOE_PFIL */	
 
-	if (snap) {
+	if (snap != 0) {
 		M_PREPEND(*mp, sizeof(struct llc), M_NOWAIT);
 		if (*mp == NULL)
-			return (error);
+			goto out1;
+
 		bcopy(&llc1, mtod(*mp, caddr_t), sizeof(struct llc));
 	}
 
 	M_PREPEND(*mp, ETHER_HDR_LEN, M_NOWAIT);
 	if (*mp == NULL)
-		return (error);
+		goto out1;
+
 	bcopy(&eh2, mtod(*mp, caddr_t), ETHER_HDR_LEN);
+	
+/* 
+ * Default error if not error == 0 
+ */
 
-	return (0);
-
+out1:
+	error = 0;
+out:
+	return (error);
+bad1:
+	error = -1;
 bad:
 	m_freem(*mp);
 	*mp = NULL;
-	return (error);
+	goto out;
 }
 
 /*
