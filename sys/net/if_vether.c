@@ -268,7 +268,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 /*
  * Create random LLA and initialize.
  */ 	
-	IFNET_RLOCK_NOSLEEP();
+
 again:	
 
 /*
@@ -286,13 +286,16 @@ again:
 /*
  * Find out, if LLA is unique.
  */
+	IFNET_RLOCK_NOSLEEP();
 	TAILQ_FOREACH(iter, &V_ifnet, if_link) {
 		
 		if (iter->if_type != IFT_ETHER)
 			continue;
 
-		if (vether_lla_equal(iter->if_addr, lla)) 
+		if (vether_lla_equal(iter->if_addr, lla)) {
+			IFNET_RUNLOCK_NOSLEEP();
 			goto again;
+		}
 	}
 	IFNET_RUNLOCK_NOSLEEP();
 /*
