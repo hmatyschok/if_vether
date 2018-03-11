@@ -53,32 +53,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
   
    static int 	ng_ether_rcv_lower(hook_p, item_p)
 
-  transmitted a frame. Any by if_vether(4) transmitted frame
-  still passes on bridge_output_p(9) mapped procedure shall 
-  annotated by M_VETHER flag for internal processing by 
-  
-   static void 	vether_start_locked(struct vether_softc	*, 
-	struct ifnet *);
-	
-  if and only if 
-  
-   static int 	vether_bridge_output(struct ifnet *, 
-	struct mbuf *, struct sockaddr *, struct rtentry *);
-     
-  maps to SAP on if_bridge(4) for transmitting mbuf(9)s 
-  carrying frame. Finally, on reception 
-
-  struct mbuf *	vether_bridge_input(struct ifnet *,
-	struct mbuf *);
-  
-  encapsulates 
-  
-   struct mbuf *	bridge_input(struct ifnet *,
-	struct mbuf *);
-    
-  maps to on SAP on if_bridge(4). Therefore, in avoidance of 
-  occouring a so called broadcast storm, any by if_vether(4)
-  received frame shall never forwarded by if_bridge(4).
+  transmitted a frame. 
    
      + xxx_output()              + ng_ether_rcv_lower()
      |                           |
@@ -93,13 +68,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
             \                   /
              \     +-----------+ vether_start_locked()
               \   / 
-               \ /
-                + vether_bridge_output(), annotates tx'd frame
-                |
-                |     if (m->m_pkthdr.rcvif == NULL)
-   	            |         m->m_flags |= M_VETHER;
-                |
-                | 
+               \ /| 
                 + bridge_output(), selects NIC for tx frames
                 | 
                 + bridge_enqueue()  
@@ -114,12 +83,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
    static void 	ether_input_internal(struct ifnet *, struct mbuf *);
    
  on if_vether(4), because any by if_bridge(4) broadcasts those to 
- its assoiciated member. This will be ensured that any by higher 
- layer above emmitted frame shall annotated by
-
-   #define M_VETHER 	M_UNUSED_8
-
- flag, see mbuf(9) and sys/mbuf.h for further details. 
+ its assoiciated member.
    
      +-{ physical broadcast media } 
      |
@@ -142,20 +106,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
         / \
        /   +--->+ ng_ether_input()  
       /
-     + vether_bridge_input(), but forwarding is stalled by
-     |           
-     |                if (ifp->if_flags & IFF_VETHER) {
-     |                    eh = mtod(m, struct ether_header   );
-     |
-     |                    if (memcmp(IF_LLADDR(ifp), 
-     |                        eh->ether_shost, ETHER_ADDR_LEN) == 0) {
-     |                        m_freem(m);
-     |                           return (NULL);
-     |                    }
-     |                    m->m_flags &= ~M_VETHER;
-     |
-     |                    return (m);		
-     |                }
+     + bridge_input()
      |
      v
      + ether_demux()
