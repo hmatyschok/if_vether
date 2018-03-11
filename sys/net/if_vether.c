@@ -76,6 +76,20 @@
 #define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
 /*
+ * Extract Link-Layer Adress [LLA].
+ */
+#define vether_sdl(ifa) \
+	((const struct sockaddr_dl *)(ifa)->ifa_addr)
+
+#define vether_lla(ifa) \
+	(vether_sdl(ifa)->sdl_data + vether_sdl(ifa)->sdl_nlen)
+	
+#define vether_lla_equal(ifa, lla) ( 	\
+	(vether_sdl(ifa)->sdl_type == IFT_ETHER) && \
+	(vether_sdl(ifa)->sdl_alen == sizeof(lla)) && \
+	(bcmp(vether_lla(ifa), lla, sizeof(lla)) == 0))
+	
+/*
  * SAP for if_clone(4) facility.
  */
 static int	vether_clone_create(struct if_clone *, int, caddr_t);
@@ -213,7 +227,7 @@ static int
 vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
-	struct ifnet *ifp;
+	struct ifnet *ifp, *iter;
 	uint8_t	lla[ETHER_ADDR_LEN];
 	int error;
 /*
@@ -252,23 +266,42 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
  	
  	sc->sc_status = IFM_AVALID;
 /*
- * Map prefix on lla.  
- */	
-	lla[0] = 0x00;
+ * Create random LLA and initialize.
+ */ 	
+	IFNET_RLOCK_NOSLEEP();
+again:	
+
 /*
- * Map randomized infix on lla.  
+ * Map prefix on LLA.  
  */	
-	arc4rand(&lla[1], sizeof(uint32_t), 0);
+	lla[0] = 0x0;
+/*
+ * Map randomized infix on LLA.  
+ */	
+	arc4rand(&lla[1], sizeof(uint32_t), 0);		
 /* 
- * Map interface major number as postfix on lla. 
+ * Map interface major number as postfix on LLA. 
  */
-	lla[5] = (uint8_t)unit; 
+	lla[5] = (uint8_t)unit;
+/*
+ * Find out, if LLA is unique.
+ */
+	TAILQ_FOREACH(iter, &V_ifnet, if_link) {
+		
+		if (iter->if_type != IFT_ETHER)
+			continue;
+
+		if (vether_lla_equal(iter->if_addr, lla)) 
+			goto again;
+	}
+	IFNET_RUNLOCK_NOSLEEP();
 /*
  * Initialize ethernet specific attributes, perform 
  * inclusion mapping on link layer and finally by 
  * bpf(4) implemented Inspection Access Point [IAP].
- */ 	
- 	ether_ifattach(ifp, lla);
+ */	
+	ether_ifattach(ifp, lla);
+ 
  	ifp->if_baudrate = 0;
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
@@ -276,7 +309,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 out: 
 	return (error);
 }
-
+ 
 /*
  * Dtor.
  */
@@ -452,7 +485,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 				m_freem(m);
 				continue;
 			}	
-			m->m_pkthdr.rcvif = ifp;
+			m->m_pkthdr.rcvif = ifp;	
 /*
  * Demultiplex any other frame.
  */	
