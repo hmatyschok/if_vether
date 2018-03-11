@@ -71,7 +71,7 @@
 #define M_VETHER 	M_UNUSED_8
 
 #define VETHER_IF_FLAGS 	\
-	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST|IFF_VETHER)
+	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST)
 #define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
 #define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
@@ -435,7 +435,9 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 /*
  * IAP for transmission.
  */				
-			BPF_MTAP(ifp, m);		 
+			BPF_MTAP(ifp, m);	
+
+			log(LOG_DEBUG, "%s: bridge_output_p\n", __func__);		 
 /*
  * Broadcast frame by if_bridge(4).
  */
@@ -450,14 +452,20 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 			if (memcmp(IF_LLADDR(ifp), 
 				eh->ether_shost, ETHER_ADDR_LEN) == 0) {
 				m_freem(m);
+				log(LOG_DEBUG, "%s: %s -> %s: m_freem(9)\n", 
+					__func__, m->m_pkthdr.rcvif->if_xname, 
+					ifp->if_xname);
 				continue;
 			}	
-			m->m_pkthdr.rcvif = ifp;	
+			m->m_pkthdr.rcvif = ifp;
+			
+			log(LOG_DEBUG, "%s: rx'd @ %s\n", __func__, ifp->if_xname);		
 /*
  * Demultiplex any other frame.
  */	
 			(*ifp->if_input)(ifp, m);
-		} else {	
+		} else {
+			log(LOG_DEBUG, "%s: m_freem(9)\n", __func__);		
 /*
  * Discard any duplicated frame.
  */ 		
