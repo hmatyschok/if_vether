@@ -162,7 +162,7 @@ __FBSDID("$FreeBSD: releng/11.1/sys/net/if_bridge.c 313050 2017-02-01 20:27:38Z 
 /*
  * PPPoE [rfc-2516] header
  */
-struct pppoe_hdr{
+struct pppoe_hdr {
 	u_int8_t 	ph_ver:4;
 	u_int8_t 	ph_type:4;
 	u_int8_t 	ph_code;
@@ -3709,7 +3709,7 @@ bridge_fragment(struct ifnet *ifp, struct mbuf **mp,
 	struct mbuf *m = *mp, *nextpkt = NULL, *mprev = NULL, *mcur = NULL;
 		struct ip *ip;
 #ifdef PPPOE_PFIL
-	struct m_tag_pppoe *mtp;
+	struct m_tag_pppoe *mtp = NULL;
 #endif /* PPPOE_PFIL */
 	int error = -1, mtu;
 
