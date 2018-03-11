@@ -449,7 +449,9 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 		if ((m->m_flags & M_PKTHDR) == 0) {
 			m_freem(m);
 			continue;
-		}
+		}			
+		BPF_MTAP(ifp, m);		
+		
 /* 
  * Discard any frame, if not member of if_bridge(4).
  */				
@@ -467,27 +469,12 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  *  (c) Data sink.
  */ 				
 		if (m->m_pkthdr.rcvif == NULL) {			
-			m->m_pkthdr.rcvif = ifp;				
-/*
- * IAP for transmission.
- */				
-			BPF_MTAP(ifp, m);	 
+			m->m_pkthdr.rcvif = ifp;					 
 /*
  * Broadcast frame by if_bridge(4).
  */
 			(void)(*bridge_output_p)(ifp, m, NULL, NULL);	
 		} else if (m->m_pkthdr.rcvif != ifp) {
-			struct ether_header *eh;
-			
-			eh = mtod(m, struct ether_header *);	
-/*
- * If we sent out, discard.
- */			
-			if (memcmp(IF_LLADDR(ifp), 
-				eh->ether_shost, ETHER_ADDR_LEN) == 0) {
-				m_freem(m);
-				continue;
-			}	
 			m->m_pkthdr.rcvif = ifp;	
 /*
  * Demultiplex any other frame.
