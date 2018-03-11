@@ -452,7 +452,7 @@ vether_bridge_output(struct ifnet *ifp, struct mbuf *m,
 	
 	return ((*vether_bridge_output_p)(ifp, m, sa, rt));
 } 
- 
+
 static void
 vether_start(struct ifnet *ifp)
 {
@@ -508,7 +508,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
  * Frame was processed by if_bridge(4). 
  */ 			
 				(*ifp->if_input)(ifp, m);
-			} else {			 
+			} else {		 
 /*
  * Broadcast frame by if_bridge(4).
  */
@@ -516,12 +516,12 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 						(ifp, m, NULL, NULL);
 			}	
 		} else if (m->m_pkthdr.rcvif != ifp) {
-			m->m_pkthdr.rcvif = ifp;			
+			m->m_pkthdr.rcvif = ifp;		
 /*
  * Demultiplex any other frame.
  */	
 			(*ifp->if_input)(ifp, m);
-		} else {					
+		} else {		
 /*
  * Discard any duplicated frame.
  */ 		
@@ -550,7 +550,7 @@ vether_bridge_input(struct ifnet *ifp, struct mbuf *m)
 			return (NULL);
 		}
 		m->m_flags &= ~M_VETHER;
-
+		
 		return (m);		
 	}
 	
