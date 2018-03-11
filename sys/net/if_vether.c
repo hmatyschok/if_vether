@@ -435,9 +435,7 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 /*
  * IAP for transmission.
  */				
-			BPF_MTAP(ifp, m);	
-
-			log(LOG_DEBUG, "%s: bridge_output_p\n", __func__);		 
+			BPF_MTAP(ifp, m);	 
 /*
  * Broadcast frame by if_bridge(4).
  */
@@ -452,20 +450,14 @@ vether_start_locked(struct vether_softc	*sc, struct ifnet *ifp)
 			if (memcmp(IF_LLADDR(ifp), 
 				eh->ether_shost, ETHER_ADDR_LEN) == 0) {
 				m_freem(m);
-				log(LOG_DEBUG, "%s: %s -> %s: m_freem(9)\n", 
-					__func__, m->m_pkthdr.rcvif->if_xname, 
-					ifp->if_xname);
 				continue;
 			}	
 			m->m_pkthdr.rcvif = ifp;
-			
-			log(LOG_DEBUG, "%s: rx'd @ %s\n", __func__, ifp->if_xname);		
 /*
  * Demultiplex any other frame.
  */	
 			(*ifp->if_input)(ifp, m);
-		} else {
-			log(LOG_DEBUG, "%s: m_freem(9)\n", __func__);		
+		} else {		
 /*
  * Discard any duplicated frame.
  */ 		
