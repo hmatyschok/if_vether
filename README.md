@@ -5,18 +5,45 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
  Virtual Ethernet interface, ported from OpenBSD. This interface 
  operates in conjunction with if_bridge(4).
 
- Suppose instance of if_vether(4) denotes ifp0 and ifp denotes 
- different Ethernet NIC, which is member of instance of if_bridge(4) 
- where ifp0 is member. his interface still utilizes by if_bridge(4) 
- implemented Service Access Point [SAP] for transmitting frames
-
-   extern	struct mbuf *(*bridge_input_p)(struct ifnet *,
-	struct mbuf *);
-
+ Suppose an instance of if_vether(4) denotes ifp0 and ifp denotes 
+ different Ethernet NIC, which is member on instance of if_bridge(4) 
+ where ifp0 is its member. 
+ 
+      + xxx_output()              + ng_ether_rcv_lower()
+     |                           |
+     v                           | 
+     + (*ifp0->if_output)()      |
+      \                          v   
+       \                         + ether_output_frame()
+        \                        |
+         \                       + (*ifp0->if_transmit)()
+          \                      |
+           \                     + (*ifp0->if_start)()
+            \                   /
+             \     +-----------+ vether_start_locked()
+              \   / 
+               \ / 
+                + bridge_output(), selects NIC for tx frames
+                | 
+                + bridge_enqueue()  
+                |
+                + (*ifp->if_transmit)()
+                |
+                v
+                +-{ physical broadcast media } 
+ 
+ This interface still utilizes by if_bridge(4) implemented Service 
+ Access Point [SAP] for receiving 
+ 
    extern	int (*bridge_output_p)(struct ifnet *, struct mbuf *,
 	struct sockaddr *, struct rtentry *);
  
- whose are either used by
+ and transmitting frames
+
+   extern	struct mbuf *(*bridge_input_p)(struct ifnet *,
+	struct mbuf *);
+	
+ like other Ethernet interfaces whose are either used by
 
    int 	ether_output(struct ifnet *ifp, struct mbuf *,
 	const struct sockaddr *, struct route *); 
@@ -39,7 +66,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
   
    static int 	if_transmit(struct ifnet *, struct mbuf *);   
 
-  brocedure, see ifnet(9) and net/if_var.h for further details. On 
+  procedure, see ifnet(9) and net/if_var.h for further details. On 
   case of if_vether(4), therefore  
   
    static void 	vether_start(struct ifnet *);
@@ -53,32 +80,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
   
    static int 	ng_ether_rcv_lower(hook_p, item_p)
 
-  transmitted a frame. 
-   
-     + xxx_output()              + ng_ether_rcv_lower()
-     |                           |
-     v                           | 
-     + (*ifp0->if_output)()      |
-      \                          v   
-       \                         + ether_output_frame()
-        \                        |
-         \                       + (*ifp0->if_transmit)()
-          \                      |
-           \                     + (*ifp0->if_start)()
-            \                   /
-             \     +-----------+ vether_start_locked()
-              \   / 
-               \ /| 
-                + bridge_output(), selects NIC for tx frames
-                | 
-                + bridge_enqueue()  
-                |
-                + (*ifp->if_transmit)()
-                |
-                v
-                +-{ physical broadcast media } 
-   
- Any tx'd frame from layer above, shall rx'd by 
+  transmitted a frame. Any tx'd frame from layer above shall rx'd by 
  
    static void 	ether_input_internal(struct ifnet *, struct mbuf *);
    
@@ -110,6 +112,12 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
      |
      v
      + ether_demux()
+     
+ Legal Notice: 
+ 
+  (a) FreeBSD is a trademark of the FreeBSD Foundation.
+   
+  (b) OpenBSD is a trademark of Theo DeRaadt.  
 </code></pre>
 
 [![Flattr this git repo](http://api.flattr.com/button/flattr-badge-large.png)](https://flattr.com/submit/auto?user_id=hmatyschok&url=https://github.com/hmatyschok/MeshBSD&title=MeshBSD&language=&tags=github&category=software) Please feel free to support me anytime.

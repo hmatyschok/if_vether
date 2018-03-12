@@ -14,20 +14,6 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.\" Copyright (c) 2015, 2016 Henning Matyschok 
-.\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
-.\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-.\"
 .Dd $Mdocdate: January 20 2014 $
 .Dt VETHER 4
 .Os
@@ -54,14 +40,12 @@ interface is a member of a
 .Xr bridge 4 ,
 the frame will show up there.
 .Sh SEE ALSO
+.Xr arp 4 ,
 .Xr bridge 4 ,
 .Xr inet 4 ,
 .Xr inet6 4 ,
+.Xr netintro 4 ,
 .Xr ng_ether 4 ,
-.Xr ifconfig 8 ,
-.Xr netstart 8
-.Sh BUGS
-Like
-.Xr tun 4 ,
-The Ethernet address chosen will be partially random, and may
-occasionally collide with another address.
+.Xr ng_pppoe 4 ,
+.Xr vlan 4 ,
+.Xr ifconfig 8 

@@ -1,5 +1,5 @@
 
-.PATH:	${SRCTOP}/sys/net
+.PATH:	${.CURDIR}/src
 KMOD=	if_vether
 SRCS=	if_vether.c 
 
