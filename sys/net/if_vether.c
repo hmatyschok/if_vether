@@ -435,7 +435,17 @@ vether_start(struct ifnet *ifp)
 /*
  * Broadcast frame by if_bridge(4).
  */
-			(void)(*bridge_output_p)(ifp, m, NULL, NULL);	
+			KASSERT(bridge_output_p != NULL,			
+				("%s: if_bridge not loaded!", __func__));
+				
+			if ((*bridge_output_p)(ifp, m, NULL, NULL) != 0) {
+/*
+ * Discard mbuf(9) as exception handling, when error 
+ * condition because of changed implementation could
+ * occour, see net/if_bridge.c for further details.
+ */				
+				m_freem(m);
+			} 
 		} else if (m->m_pkthdr.rcvif != ifp) {
 			m->m_pkthdr.rcvif = ifp;	
 /*
