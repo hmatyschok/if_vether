@@ -95,7 +95,7 @@
  *       \                      |
  *        \                     + (*ifp0->if_start)()
  *         \                   /
- *          \     +-----------+ vether_start_locked()
+ *          \     +-----------+ vether_start()
  *           \   / 
  *            \ /
  *             + bridge_output(), selects NIC for tx frames
@@ -125,7 +125,7 @@
  *  |
  *  + (*ifp0->if_transmit)()
  *   \            
- *    + vether_start_locked()
+ *    + vether_locked()
  *     \     
  *      + (*ifp0->if_input)() 
  *     / \

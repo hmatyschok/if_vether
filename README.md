@@ -20,7 +20,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
           \                      |
            \                     + (*ifp0->if_start)()
             \                   /
-             \     +-----------+ vether_start_locked()
+             \     +-----------+ vether_start()
               \   / 
                \ / 
                 + bridge_output(), selects NIC for tx frames
@@ -102,7 +102,7 @@ if_vether(4) - port for FreeBSD 11.x-RELEASE
      |
      + (*ifp0->if_transmit)()
       \            
-       + vether_start_locked()
+       + vether_start()
         \     
          + (*ifp0->if_input)() 
         / \
