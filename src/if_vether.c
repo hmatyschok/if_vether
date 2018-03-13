@@ -146,7 +146,6 @@ struct vether_softc {
 #define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
 #define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
-
 static void 	vether_init(void *);
 static void 	vether_stop(struct ifnet *, int);
 static void 	vether_start(struct ifnet *);
