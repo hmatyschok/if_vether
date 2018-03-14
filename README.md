@@ -1,13 +1,14 @@
-if_vether(4) - port for FreeBSD 11.x-RELEASE
---------------------------------------------
+if_vether(4) for FreeBSD and if_bridge(4) [v 1.31]
+--------------------------------------------------
 
 <pre><code> 
- Virtual Ethernet interface, ported from OpenBSD. This interface 
- operates in conjunction with if_bridge(4).
+ Virtual Ethernet interface, ported from implementation of vether(4) 
+ [v 1.29] created by the OpenBSD project. This interface operates in 
+ conjunction with if_bridge(4), v 1.31.
 
  Suppose an instance of if_vether(4) denotes ifp0 and ifp denotes 
- different Ethernet NIC, which is member on instance of if_bridge(4) 
- where ifp0 is its member. 
+ different Ethernet NIC or interrface, which is member on instance 
+ of if_bridge(4) where ifp0 is its member also too. 
  
       + xxx_output()              + ng_ether_rcv_lower()
      |                           |
@@ -132,10 +133,10 @@ If someone wants to contact me by electronic mail, use encryption!
 Otherwise, any connection attempt will be discarded. 
 </code></pre>
 
-This is a necessary security measure, because I want 
-to know exactly who is contacting me. This world is 
-full of individuals whose are operating on one's own 
-merits. :)
+This is a necessary security measure, because I would like to know 
+who is contacting me, because of this planet is full of individuals 
+whose are operating on one's own merits and this imply that this 
+planet is not a so called "Ponyhof", unfortunately. :)
 
 <pre><code>
 -----BEGIN PGP PUBLIC KEY BLOCK-----

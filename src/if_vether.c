@@ -57,7 +57,7 @@
 #include <net/if_bridgevar.h>
 
 /*
- * Extract Link-Layer Adress [LLA].
+ * Extract Link-Layer Adress [LLA], see vether_clone_create(9).
  */
 #define vether_sdl(ifa) \
 	((const struct sockaddr_dl *)(ifa)->ifa_addr)
@@ -137,7 +137,6 @@ struct vether_softc {
 	struct ifnet	*sc_ifp;	/* network interface. */	
 	struct ifmedia	sc_ifm;		/* fake media information */
 };
-
 #define VETHER_IF_FLAGS 	\
 	(IFF_SIMPLEX|IFF_BROADCAST|IFF_MULTICAST)
 #define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
@@ -155,7 +154,7 @@ static int	vether_clone_create(struct if_clone *, int, caddr_t);
 static void 	vether_clone_destroy(struct ifnet *);
 
 /*
- * SAP for if_clone(4) facility.
+ * Service Access Point [SAP] for if_clone(4) facility.
  */
 static struct if_clone *vether_cloner;
 static const char vether_name[] = "vether";
@@ -188,7 +187,7 @@ vether_mod_event(module_t mod, int event, void *data)
 } 
 
 /*
- * Module desccription.
+ * Module description.
  */
 static moduledata_t vether_mod = {
 	"if_vether",
@@ -274,7 +273,7 @@ again:
 	IFNET_RUNLOCK_NOSLEEP();
 /*
  * Initialize ethernet specific attributes, perform 
- * inclusion mapping on link layer and finally by 
+ * inclusion mapping on link-layer and finally by 
  * bpf(4) implemented Inspection Access Point [IAP].
  */	
 	ether_ifattach(ifp, lla);
@@ -299,11 +298,11 @@ vether_clone_destroy(struct ifnet *ifp)
 	
 	ifp->if_flags &= ~IFF_UP;
 /*
- * Inverse element of ether_ifattach.
+ * Inverse element of ether_ifattach(9).
  */
 	ether_ifdetach(ifp);
 /*
- * Release bound ressources.
+ * Release by an instance of if_vether(4) bound ressources.
  */	
 	if_free(ifp);
 	
@@ -359,7 +358,7 @@ vether_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 } 
  
 /*
- * Initializes interface.
+ * Initialize interface.
  */
 static void
 vether_init(void *xsc)
@@ -374,7 +373,7 @@ vether_init(void *xsc)
 }
  
 /*
- * Stops focussed instance of if_vether(4).
+ * Stop focussed instance of if_vether(4).
  */
 static void
 vether_stop(struct ifnet *ifp, int disable)
