@@ -56,9 +56,6 @@
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
 
-
-#define M_VETHER 	M_UNUSED_8
-
 /*
  * Extract Link-Layer Adress [LLA].
  */
