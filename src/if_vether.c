@@ -397,10 +397,6 @@ vether_start(struct ifnet *ifp)
 		if (m == NULL) 
 			break;
 
-		if ((m->m_flags & M_PKTHDR) == 0) {
-			m_freem(m);
-			continue;
-		}			
 		BPF_MTAP(ifp, m);	
 /* 
  * Discard any frame, if not member of if_bridge(4).
