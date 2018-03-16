@@ -55,6 +55,8 @@
 #include <net/bpf.h>
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
+#include <net/vnet.h>
+
 
 /*
  * Extract Link-Layer Adress [LLA], see vether_clone_create(9).
@@ -156,8 +158,29 @@ static void 	vether_clone_destroy(struct ifnet *);
 /*
  * Service Access Point [SAP] for if_clone(4) facility.
  */
-static struct if_clone *vether_cloner;
+static VNET_DEFINE(struct if_clone *, vether_cloner);
+#define	V_vether_cloner	VNET(vether_cloner)
+
 static const char vether_name[] = "vether";
+
+static void
+vnet_vether_init(const void *unused __unused)
+{
+
+	V_vether_cloner = if_clone_simple(vether_name,
+	    vether_clone_create, vether_clone_destroy, 0);
+}
+VNET_SYSINIT(vnet_vether_init, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY,
+    vnet_vether_init, NULL);
+
+static void
+vnet_vether_uninit(const void *unused __unused)
+{
+
+	if_clone_detach(V_vether_cloner);
+}
+VNET_SYSUNINIT(vnet_vether_uninit, SI_SUB_PSEUDO, SI_ORDER_ANY,
+    vnet_vether_uninit, NULL);
 
 /*
  * Module event handler.
