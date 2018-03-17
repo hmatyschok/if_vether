@@ -170,8 +170,8 @@ vnet_vether_init(const void *unused __unused)
 	V_vether_cloner = if_clone_simple(vether_name,
 	    vether_clone_create, vether_clone_destroy, 0);
 }
-VNET_SYSINIT(vnet_vether_init, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY,
-    vnet_vether_init, NULL);
+VNET_SYSINIT(vnet_vether_init, SI_SUB_PROTO_IFATTACHDOMAIN, 
+	SI_ORDER_ANY, vnet_vether_init, NULL);
 
 static void
 vnet_vether_uninit(const void *unused __unused)
@@ -419,8 +419,15 @@ vether_start(struct ifnet *ifp)
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL) 
 			break;
-
-		BPF_MTAP(ifp, m);	
+/*
+ * IAP for tapping by bpf(4).
+ */
+		BPF_MTAP(ifp, m);
+/*
+ * Do some statistics.		
+ */		
+		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
+		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);		
 /* 
  * Discard any frame, if not member of if_bridge(4).
  */				
