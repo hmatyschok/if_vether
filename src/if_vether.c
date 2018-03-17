@@ -192,15 +192,7 @@ vether_mod_event(module_t mod, int event, void *data)
  
 	switch (event) {
 	case MOD_LOAD:
-/*
- * Attach if_cloner(4).
- */		
-		vether_cloner = if_clone_simple(vether_name,
-			vether_clone_create, vether_clone_destroy, 0);
-		break;
-	case MOD_UNLOAD:		
-		if_clone_detach(vether_cloner);
-		
+	case MOD_UNLOAD:			
 		break;
 	default:
 		error = EOPNOTSUPP;
