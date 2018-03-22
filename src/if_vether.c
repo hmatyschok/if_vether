@@ -192,7 +192,7 @@ vether_mod_event(module_t mod, int event, void *data)
  
 	switch (event) {
 	case MOD_LOAD:
-	case MOD_UNLOAD:			
+	case MOD_UNLOAD:
 		break;
 	default:
 		error = EOPNOTSUPP;
@@ -421,12 +421,10 @@ vether_start(struct ifnet *ifp)
 		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);		
 /* 
- * Discard any frame, if not member of if_bridge(4).
+ * Discard, if not member of if_bridge(4).
  */				
-		if (ifp->if_bridge == NULL) {
-			m_freem(m);
-			continue;
-		}
+		if (ifp->if_bridge == NULL) 
+			m->m_pkthdr.rcvif = ifp;
 /*
  * Three cases are considered here:
  * 
