@@ -424,7 +424,7 @@ vether_start(struct ifnet *ifp)
  * Discard, if not member of if_bridge(4).
  */				
 		if (ifp->if_bridge == NULL) 
-			m->m_pkthdr.rcvif = ifp;
+			m->m_pkthdr.rcvif = ifp;	
 /*
  * Three cases are considered here:
  * 
@@ -433,7 +433,7 @@ vether_start(struct ifnet *ifp)
  *  (b) Frame was rx'd by link-layer.
  * 
  *  (c) Data sink.
- */ 				
+ */		
 		if (m->m_pkthdr.rcvif == NULL) {			
 			m->m_pkthdr.rcvif = ifp;					 
 /*

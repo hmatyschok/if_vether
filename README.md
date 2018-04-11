@@ -1,7 +1,7 @@
-if_vether(4) for FreeBSD and if_bridge(4) [v 1.31]
---------------------------------------------------
-
 <pre><code> 
+if_vether(4) for FreeBSD and if_bridge(4) [v 1.31]
+==================================================
+
  Virtual Ethernet interface, ported from implementation of vether(4) 
  [v 1.29] created by the OpenBSD project. This interface operates in 
  conjunction with if_bridge(4), v 1.31.
@@ -113,32 +113,19 @@ if_vether(4) for FreeBSD and if_bridge(4) [v 1.31]
      |
      v
      + ether_demux()
-</code></pre>
-     
+   
 Legal Notice: 
 -------------
  
-<pre><code>
   (a) FreeBSD is a trademark of the FreeBSD Foundation.
    
   (b) OpenBSD is a trademark of Theo DeRaadt.  
-</code></pre>
 
 Additional information about contacting
 ---------------------------------------
       
 If someone wants to contact me by electronic mail, use encryption!
 
-<pre><code>
-Otherwise, any connection attempt will be discarded. 
-</code></pre>
-
-This is a necessary security measure, because I would like to know 
-who is contacting me, because of this planet is full of individuals 
-whose are operating on one's own merits and this imply that this 
-planet is not a so called "Ponyhof", unfortunately. :)
-
-<pre><code>
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v2
 
@@ -170,4 +157,10 @@ u5E2GRq1FgrjmjTS8r+/zZfV31iFkIdc5gC9ipwBsA7H6Bx8lPP5M0l1MXS/wAWU
 8GZ4NRztiBU=
 =lsmx
 -----END PGP PUBLIC KEY BLOCK-----
-</code></pre>
+
+Otherwise, any connection attempt will be discarded. 
+
+This is a necessary security measure, because I would like to know 
+who is contacting me, because of this planet is full of individuals 
+whose are operating on one's own merits and this imply that this 
+planet is not a so called "Ponyhof", unfortunately. :)
