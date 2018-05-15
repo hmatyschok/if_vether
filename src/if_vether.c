@@ -405,6 +405,7 @@ static void
 vether_start(struct ifnet *ifp)
 {
 	struct mbuf *m;
+	int error;
 	
 	ifp->if_drv_flags |= IFF_DRV_OACTIVE;
 	for (;;) {
@@ -439,10 +440,8 @@ vether_start(struct ifnet *ifp)
 /*
  * Broadcast frame by if_bridge(4).
  */
-			KASSERT(bridge_output_p != NULL,			
-				("%s: if_bridge not loaded!", __func__));
-				
-			if ((*bridge_output_p)(ifp, m, NULL, NULL) != 0) {
+			BRIDGE_OUTPUT(ifp, m, error);	
+			if (error != 0) {
 /*
  * Discard mbuf(9) as exception handling, when error 
  * condition because of changed implementation could
