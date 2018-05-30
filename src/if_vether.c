@@ -275,8 +275,11 @@ again:
  * Find out, if LLA is unique.
  */
 	IFNET_RLOCK_NOSLEEP();
+#if __FreeBSD_version >= 1200064
+	CK_STAILQ_FOREACH(iter, &V_ifnet, if_link) {
+#else	
 	TAILQ_FOREACH(iter, &V_ifnet, if_link) {
-		
+#endif		
 		if (iter->if_type != IFT_ETHER)
 			continue;
 
