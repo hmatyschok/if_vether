@@ -219,7 +219,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
 	struct ifnet *ifp, *iter;
-	uint8_t	lla[ETHER_ADDR_LEN];
+	uint8_t	lla[ETHER_ADDR_LEN] = { 0, 0, 0, 0, 0, 0 };
 	int error;
 /*
  * Allocate software context.
@@ -260,17 +260,9 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 again:	
 
 /*
- * Map prefix on LLA.  
+ * Map randomized postfix on LLA.  
  */	
-	lla[0] = 0x0;
-/*
- * Map randomized infix on LLA.  
- */	
-	arc4rand(&lla[1], sizeof(uint32_t), 0);		
-/* 
- * Map interface major number as postfix on LLA. 
- */
-	lla[5] = (uint8_t)unit;
+	arc4rand(&lla[2], sizeof(uint32_t), 0);		
 /*
  * Find out, if LLA is unique.
  */
