@@ -219,7 +219,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
 	struct ifnet *ifp, *iter;
-	uint8_t	lla[ETHER_ADDR_LEN] = { 0, 0, 0, 0, 0, 0 };
+	uint8_t	lla[ETHER_ADDR_LEN] = { 0x42, 0x53, 0, 0, 0, 0 };
 	int error;
 /*
  * Allocate software context.
