@@ -219,7 +219,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
 	struct ifnet *ifp, *iter;
-	uint8_t	lla[ETHER_ADDR_LEN] = { 0x42, 0x53, 0, 0, 0, 0 };
+	uint8_t	lla[ETHER_ADDR_LEN];
 	int error;
 /*
  * Allocate software context.
@@ -256,7 +256,8 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 /*
  * Create random LLA and initialize.
  */ 	
-
+ 	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr. */
+	lla[1] = 0x53;
 again:	
 
 /*
