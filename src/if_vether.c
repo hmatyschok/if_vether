@@ -158,7 +158,7 @@ static void 	vether_clone_destroy(struct ifnet *);
 /*
  * Service Access Point [SAP] for if_clone(4) facility.
  */
-static VNET_DEFINE(struct if_clone *, vether_cloner);
+VNET_DEFINE(struct if_clone *, vether_cloner);
 #define	V_vether_cloner	VNET(vether_cloner)
 
 static const char vether_name[] = "vether";
