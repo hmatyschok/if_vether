@@ -188,11 +188,12 @@ VNET_SYSUNINIT(vnet_vether_uninit, SI_SUB_PSEUDO, SI_ORDER_ANY,
 static int
 vether_mod_event(module_t mod, int event, void *data)
 {
-	int error = 0;
+	int error;
  
 	switch (event) {
 	case MOD_LOAD:
 	case MOD_UNLOAD:
+		error = 0;
 		break;
 	default:
 		error = EOPNOTSUPP;
@@ -221,9 +222,8 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	struct ifnet *ifp, *iter;
 	uint8_t	lla[ETHER_ADDR_LEN];
 	int error;
-/*
- * Allocate software context.
- */ 
+
+	/* Allocate software context. */ 
 	sc = malloc(sizeof(struct vether_softc), 
 		M_DEVBUF, M_WAITOK|M_ZERO); 	/* can't fail */
 	ifp = sc->sc_ifp = if_alloc(IFT_ETHER);
@@ -233,13 +233,9 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 		goto out;
 	}
 	if_initname(ifp, vether_name, unit);
-/*
- * Bind software context.
- */ 
+
+	/* Bind software context and nitialize its attributes. */ 
 	ifp->if_softc = sc;
-/*
- * Initialize its attributes.
- */ 
 	ifp->if_init = vether_init;
 	ifp->if_ioctl = vether_ioctl;
 	ifp->if_start = vether_start;
@@ -253,20 +249,15 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 		vether_media_status);
 	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
-/*
- * Create random LLA and initialize.
- */ 	
+
+	/* Create random LLA and initialize. */ 	
  	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr. */
 	lla[1] = 0x53;
 again:	
 
-/*
- * Map randomized postfix on LLA.  
- */	
+	/* Map randomized postfix on LLA. */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
-/*
- * Find out, if LLA is unique.
- */
+	
 	IFNET_RLOCK_NOSLEEP();
 #if __FreeBSD_version >= 1200064
 	CK_STAILQ_FOREACH(iter, &V_ifnet, if_link) {
@@ -282,11 +273,12 @@ again:
 		}
 	}
 	IFNET_RUNLOCK_NOSLEEP();
-/*
- * Initialize ethernet specific attributes, perform 
- * inclusion mapping on link-layer and finally by 
- * bpf(4) implemented Inspection Access Point [IAP].
- */	
+
+	/*
+	 * Initialize ethernet specific attributes, perform 
+	 * inclusion mapping on link-layer and finally by 
+	 * bpf(4) implemented Inspection Access Point [IAP].
+	 */	
 	ether_ifattach(ifp, lla);
  
  	ifp->if_baudrate = 0;
@@ -308,13 +300,9 @@ vether_clone_destroy(struct ifnet *ifp)
 	vether_stop(ifp, 1);
 	
 	ifp->if_flags &= ~IFF_UP;
-/*
- * Inverse element of ether_ifattach(9).
- */
+
 	ether_ifdetach(ifp);
-/*
- * Release by an instance of if_vether(4) bound ressources.
- */	
+		
 	if_free(ifp);
 	
 	sc = ifp->if_softc;
@@ -390,7 +378,7 @@ static void
 vether_stop(struct ifnet *ifp, int disable)
 {
 	
-	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 }	
  
 /*
@@ -403,53 +391,49 @@ vether_start(struct ifnet *ifp)
 	struct mbuf *m;
 	int error;
 	
+	if ((ifp->if_drv_flags & (IFF_DRV_RUNNING | IFF_DRV_OACTIVE)) !=
+	    IFF_DRV_RUNNING)
+		return;
+	
 	ifp->if_drv_flags |= IFF_DRV_OACTIVE;
 	for (;;) {
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL) 
 			break;
-/*
- * IAP for tapping by bpf(4).
- */
+
+		/* IAP for tapping by bpf(4). */
 		BPF_MTAP(ifp, m);
-/*
- * Do some statistics.		
- */		
+
+		/* Do some statistics. */		
 		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);		
-/* 
- * Discard, if not member of if_bridge(4).
- */				
+
+		/* Discard, if not member of if_bridge(4). */				
 		if (ifp->if_bridge == NULL) 
 			m->m_pkthdr.rcvif = ifp;	
-/*
- * Three cases are considered here:
- * 
- *  (a) Frame was tx'd by layer above.
- * 
- *  (b) Frame was rx'd by link-layer.
- * 
- *  (c) Data sink.
- */		
+
+		/*
+		 * Three cases are considered here:
+		 * 
+		 *  (a) Frame was tx'd by layer above.
+		 * 
+		 *  (b) Frame was rx'd by link-layer.
+		 * 
+		 *  (c) Data sink.
+		 */		
 		if (m->m_pkthdr.rcvif == NULL) {			
+			/* Broadcast frame by if_bridge(4). */
+			
 			m->m_pkthdr.rcvif = ifp;					 
-/*
- * Broadcast frame by if_bridge(4).
- */
+			
 			BRIDGE_OUTPUT(ifp, m, error);	
-			if (error != 0) {
-/*
- * Discard mbuf(9) as exception handling, when error 
- * condition because of changed implementation could
- * occour, see net/if_bridge.c for further details.
- */				
+			if (error != 0) 
 				m_freem(m);
-			} 
 		} else if (m->m_pkthdr.rcvif != ifp) {
+			/* Demultiplex any other frame. */
+
 			m->m_pkthdr.rcvif = ifp;	
-/*
- * Demultiplex any other frame.
- */	
+
 			(*ifp->if_input)(ifp, m);
 		} else
 			m_freem(m);
