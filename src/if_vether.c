@@ -221,7 +221,6 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	struct vether_softc *sc;
 	struct ifnet *ifp, *iter;
 	uint8_t	lla[ETHER_ADDR_LEN];
-	int error;
 
 	/* Allocate software context. */ 
 	sc = malloc(sizeof(struct vether_softc), 
@@ -229,8 +228,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifp = sc->sc_ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		free(sc, M_DEVBUF);
-		error = ENOSPC;
-		goto out;
+		return (ENOSPC);
 	}
 	if_initname(ifp, vether_name, unit);
 
@@ -283,10 +281,7 @@ again:
  
  	ifp->if_baudrate = 0;
 
-	ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	error = 0;
-out: 
-	return (error);
+	return (0);
 }
  
 /*
@@ -352,8 +347,8 @@ vether_media_change(struct ifnet *ifp)
 static void
 vether_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
-	ifmr->ifm_active = IFM_ETHER|IFM_AUTO;
-	ifmr->ifm_status = IFM_AVALID|IFM_ACTIVE;
+	ifmr->ifm_active = IFM_ETHER | IFM_AUTO;
+	ifmr->ifm_status = IFM_AVALID | IFM_ACTIVE;
 } 
  
 /*
