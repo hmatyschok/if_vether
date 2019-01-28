@@ -255,8 +255,11 @@ again:
 
 	/* Map randomized postfix on LLA. */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
-	
+#if __FreeBSD_version >= 1300002
+	IFNET_RLOCK()
+#else
 	IFNET_RLOCK_NOSLEEP();
+#endif
 #if __FreeBSD_version >= 1200064
 	CK_STAILQ_FOREACH(iter, &V_ifnet, if_link) {
 #else	
@@ -270,8 +273,11 @@ again:
 			goto again;
 		}
 	}
+#if __FreeBSD_version >= 1300002
+	IFNET_RUNLOCK()
+#else	
 	IFNET_RUNLOCK_NOSLEEP();
-
+#endif
 	/*
 	 * Initialize ethernet specific attributes, perform 
 	 * inclusion mapping on link-layer and finally by 
