@@ -256,7 +256,7 @@ again:
 	/* Map randomized postfix on LLA. */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
 #if __FreeBSD_version >= 1300002
-	IFNET_RLOCK()
+	IFNET_RLOCK();
 #else
 	IFNET_RLOCK_NOSLEEP();
 #endif
@@ -274,7 +274,7 @@ again:
 		}
 	}
 #if __FreeBSD_version >= 1300002
-	IFNET_RUNLOCK()
+	IFNET_RUNLOCK();
 #else	
 	IFNET_RUNLOCK_NOSLEEP();
 #endif
