@@ -255,7 +255,7 @@ again:
 
 	/* Map randomized postfix on LLA. */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
-#if __FreeBSD_version >= 1300002
+#if __FreeBSD_version >= 1300000
 	IFNET_RLOCK();
 #else
 	IFNET_RLOCK_NOSLEEP();
@@ -269,11 +269,15 @@ again:
 			continue;
 
 		if (vether_lla_equal(iter->if_addr, lla)) {
-			IFNET_RUNLOCK_NOSLEEP();
+#if __FreeBSD_version >= 1300000
+				IFNET_RLOCK();
+#else
+				IFNET_RLOCK_NOSLEEP();
+#endif
 			goto again;
 		}
 	}
-#if __FreeBSD_version >= 1300002
+#if __FreeBSD_version >= 1300000
 	IFNET_RUNLOCK();
 #else	
 	IFNET_RUNLOCK_NOSLEEP();
