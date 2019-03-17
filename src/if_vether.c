@@ -75,65 +75,6 @@
 /*
  * Virtual Ethernet interface, ported from OpenBSD. This interface 
  * operates in conjunction with if_bridge(4).
- *
- * Suppose instance of if_vether(4) denotes ifp0 and ifp denotes 
- * different Ethernet NIC, which is member of instance of if_bridge(4) 
- * where ifp0 is member.  
- *
- * Frame output: 
- * -------------
- *
- *  + xxx_output()              + ng_ether_rcv_lower()
- *  |                           |
- *  v                           | 
- *  + (*ifp0->if_output)()      |
- *   \                          v   
- *    \                         + ether_output_frame()
- *     \                        |
- *      \                       + (*ifp0->if_transmit)()
- *       \                      |
- *        \                     + (*ifp0->if_start)()
- *         \                   /
- *          \     +-----------+ vether_start()
- *           \   / 
- *            \ /
- *             + bridge_output(), selects NIC for tx frames
- *             | 
- *             + bridge_enqueue()  
- *             |
- *             + (*ifp->if_transmit)()
- *             |
- *             v
- *             +-{ physical broadcast media } 
- *
- * Frame input:
- * ------------
- *
- *  +-{ physical broadcast media } 
- *  |
- *  v
- *  + (*ifp->if_input)(), NIC rx frame 
- *  |
- *  + vether_bridge_input()
- *  |
- *  + bridge_input()
- *  |                           
- *  + bridge_forward(), selects ifp0 denotes instance of if_vether(4)
- *  |
- *  + bridge_enqueue()
- *  |
- *  + (*ifp0->if_transmit)()
- *   \            
- *    + vether_locked()
- *     \     
- *      + (*ifp0->if_input)() 
- *     / \
- *    /   +--->+ ng_ether_input()  
- *   /
- *  + bridge_input()
- *  |
- *  v
- *  + ether_demux() 
  */
 struct vether_softc {
 	struct ifnet	*sc_ifp;	/* network interface. */	
