@@ -59,7 +59,7 @@
 
 /*
  * Virtual Ethernet interface, ported from OpenBSD. This interface 
- * operates in conjunction with if_bridge(4).
+ * operates in conjunction with if_bridge.
  */
 
 #define vether_sdl(ifa) \
@@ -172,13 +172,11 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 		vether_media_status);
 	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
-
-	/* create random LLA and initialize */ 	
- 	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr */
+ 	
+ 	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr. */
 	lla[1] = 0x53;
+	
 again:	
-
-	/* map randomized postfix on LLA */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
 #if __FreeBSD_version >= 1300000
 	IFNET_RLOCK();
@@ -246,7 +244,7 @@ vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		else 
 			ifp->if_mtu = ifr->ifr_mtu;	
 		break;
-	case SIOCSIFMEDIA:	/* media types can't be changed */
+	case SIOCSIFMEDIA:	/* Media types can't be changed. */
 	case SIOCGIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifm, cmd);
 		break;
@@ -295,10 +293,6 @@ vether_stop(struct ifnet *ifp, int disable)
 	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 }	
  
-/*
- * I/O.
- */
-
 static void
 vether_start(struct ifnet *ifp)
 {
@@ -316,35 +310,30 @@ vether_start(struct ifnet *ifp)
 			break;
 
 		BPF_MTAP(ifp, m);
-
-		/* do some statistics */		
+	
 		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);		
 
-		/* discard, if not member of if_bridge(4) */				
+		/* Discard, if not if_bridge member. */				
 		if (ifp->if_bridge == NULL) 
 			m->m_pkthdr.rcvif = ifp;	
 
 		/*
 		 * Three cases are considered here:
 		 * 
-		 *  (a) Frame was tx'd by layer above.
+		 *  (a) Frame was tx'd by ether_output.
 		 * 
-		 *  (b) Frame was rx'd by link-layer.
+		 *  (b) Frame was rx'd by ether_input.
 		 * 
 		 *  (c) Data sink.
 		 */		
 		if (m->m_pkthdr.rcvif == NULL) {			
-			/* broadcast frame by if_bridge(4) */
-			
 			m->m_pkthdr.rcvif = ifp;					 
 			
 			BRIDGE_OUTPUT(ifp, m, error);	
 			if (error != 0) 
 				m_freem(m);
 		} else if (m->m_pkthdr.rcvif != ifp) {
-			/* demultiplex any other frame */
-
 			m->m_pkthdr.rcvif = ifp;	
 
 			(*ifp->if_input)(ifp, m);
