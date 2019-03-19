@@ -157,8 +157,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 		return (ENOSPC);
 	}
 	if_initname(ifp, vether_name, unit);
-
-	/* Bind software context and nitialize its attributes. */ 
+ 
 	ifp->if_softc = sc;
 	ifp->if_init = vether_init;
 	ifp->if_ioctl = vether_ioctl;
@@ -174,12 +173,12 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
 
-	/* Create random LLA and initialize. */ 	
- 	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr. */
+	/* create random LLA and initialize */ 	
+ 	lla[0] = 0x42; 	/* 2nd bit denotes locally administered addr */
 	lla[1] = 0x53;
 again:	
 
-	/* Map randomized postfix on LLA. */	
+	/* map randomized postfix on LLA */	
 	arc4rand(&lla[2], sizeof(uint32_t), 0);		
 #if __FreeBSD_version >= 1300000
 	IFNET_RLOCK();
