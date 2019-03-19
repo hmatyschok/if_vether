@@ -57,10 +57,11 @@
 #include <net/if_bridgevar.h>
 #include <net/vnet.h>
 
-
 /*
- * Extract Link-Layer Adress [LLA], see vether_clone_create(9).
+ * Virtual Ethernet interface, ported from OpenBSD. This interface 
+ * operates in conjunction with if_bridge(4).
  */
+
 #define vether_sdl(ifa) \
 	((const struct sockaddr_dl *)(ifa)->ifa_addr)
 
@@ -72,10 +73,6 @@
 	(vether_sdl(ifa)->sdl_alen == sizeof(lla)) && \
 	(bcmp(vether_lla(ifa), lla, sizeof(lla)) == 0))
 
-/*
- * Virtual Ethernet interface, ported from OpenBSD. This interface 
- * operates in conjunction with if_bridge(4).
- */
 struct vether_softc {
 	struct ifnet	*sc_ifp;	/* network interface. */	
 	struct ifmedia	sc_ifm;		/* fake media information */
@@ -85,20 +82,17 @@ struct vether_softc {
 #define VETHER_IFCAP_FLAGS 	(IFCAP_VLAN_MTU|IFCAP_JUMBO_MTU)
 #define VETHER_IFM_FLAGS 	(IFM_ETHER|IFM_AUTO)
 
-static void 	vether_init(void *);
-static void 	vether_stop(struct ifnet *, int);
-static void 	vether_start(struct ifnet *);
+static void	vether_init(void *);
+static void	vether_stop(struct ifnet *, int);
+static void	vether_start(struct ifnet *);
 
-static int 	vether_media_change(struct ifnet *);
-static void 	vether_media_status(struct ifnet *, struct ifmediareq *);
-static int 	vether_ioctl(struct ifnet *, u_long, caddr_t);
+static int	vether_media_change(struct ifnet *);
+static void	vether_media_status(struct ifnet *, struct ifmediareq *);
+static int	vether_ioctl(struct ifnet *, u_long, caddr_t);
 
 static int	vether_clone_create(struct if_clone *, int, caddr_t);
-static void 	vether_clone_destroy(struct ifnet *);
+static void	vether_clone_destroy(struct ifnet *);
 
-/*
- * Service Access Point [SAP] for if_clone(4) facility.
- */
 VNET_DEFINE(struct if_clone *, vether_cloner);
 #define	V_vether_cloner	VNET(vether_cloner)
 
@@ -123,9 +117,6 @@ vnet_vether_uninit(const void *unused __unused)
 VNET_SYSUNINIT(vnet_vether_uninit, SI_SUB_PSEUDO, SI_ORDER_ANY,
     vnet_vether_uninit, NULL);
 
-/*
- * Module event handler.
- */
 static int
 vether_mod_event(module_t mod, int event, void *data)
 {
@@ -143,9 +134,6 @@ vether_mod_event(module_t mod, int event, void *data)
 	return (error);
 } 
 
-/*
- * Module description.
- */
 static moduledata_t vether_mod = {
 	"if_vether",
 	vether_mod_event,
@@ -153,9 +141,6 @@ static moduledata_t vether_mod = {
 };
 DECLARE_MODULE(if_vether, vether_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
 
-/*
- * Ctor.
- */
 static int
 vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
@@ -235,9 +220,6 @@ again:
 	return (0);
 }
  
-/*
- * Dtor.
- */
 static void
 vether_clone_destroy(struct ifnet *ifp)
 {
@@ -255,9 +237,6 @@ vether_clone_destroy(struct ifnet *ifp)
 	free(sc, M_DEVBUF);
 }
  
-/*
- * Media types can't be changed.
- */
 static int
 vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
@@ -272,7 +251,7 @@ vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		else 
 			ifp->if_mtu = ifr->ifr_mtu;	
 		break;
-	case SIOCSIFMEDIA:
+	case SIOCSIFMEDIA:	/* media types can't be changed */
 	case SIOCGIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifm, cmd);
 		break;
@@ -302,9 +281,6 @@ vether_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	ifmr->ifm_status = IFM_AVALID | IFM_ACTIVE;
 } 
  
-/*
- * Initialize interface.
- */
 static void
 vether_init(void *xsc)
 {
@@ -317,9 +293,6 @@ vether_init(void *xsc)
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 }
  
-/*
- * Stop focussed instance of if_vether(4).
- */
 static void
 vether_stop(struct ifnet *ifp, int disable)
 {
@@ -368,7 +341,7 @@ vether_start(struct ifnet *ifp)
 		 *  (c) Data sink.
 		 */		
 		if (m->m_pkthdr.rcvif == NULL) {			
-			/* Broadcast frame by if_bridge(4). */
+			/* broadcast frame by if_bridge(4) */
 			
 			m->m_pkthdr.rcvif = ifp;					 
 			
@@ -376,7 +349,7 @@ vether_start(struct ifnet *ifp)
 			if (error != 0) 
 				m_freem(m);
 		} else if (m->m_pkthdr.rcvif != ifp) {
-			/* Demultiplex any other frame. */
+			/* demultiplex any other frame */
 
 			m->m_pkthdr.rcvif = ifp;	
 
