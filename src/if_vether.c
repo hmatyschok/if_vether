@@ -208,11 +208,7 @@ again:
 #else	
 	IFNET_RUNLOCK_NOSLEEP();
 #endif
-	/*
-	 * Initialize ethernet specific attributes, perform 
-	 * inclusion mapping on link-layer and finally by 
-	 * bpf(4) implemented Inspection Access Point [IAP].
-	 */	
+
 	ether_ifattach(ifp, lla);
  
  	ifp->if_baudrate = 0;
