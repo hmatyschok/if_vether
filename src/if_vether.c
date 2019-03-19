@@ -316,14 +316,13 @@ vether_start(struct ifnet *ifp)
 		if (m == NULL) 
 			break;
 
-		/* IAP for tapping by bpf(4). */
 		BPF_MTAP(ifp, m);
 
-		/* Do some statistics. */		
+		/* do some statistics */		
 		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);		
 
-		/* Discard, if not member of if_bridge(4). */				
+		/* discard, if not member of if_bridge(4) */				
 		if (ifp->if_bridge == NULL) 
 			m->m_pkthdr.rcvif = ifp;	
 
