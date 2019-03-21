@@ -181,6 +181,7 @@ again:
 
 	/* map randomized postfix on LLA */
 	arc4rand(&lla[2], sizeof(uint32_t), 0);
+
 #if __FreeBSD_version >= 1300000
 	IFNET_RLOCK();
 #else
@@ -250,7 +251,7 @@ vether_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		else
 			ifp->if_mtu = ifr->ifr_mtu;
 		break;
-	case SIOCSIFMEDIA:	/* media types can't be changed */
+	case SIOCSIFMEDIA:	/* Media types can't be changed. */
 	case SIOCGIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifm, cmd);
 		break;
@@ -325,6 +326,7 @@ vether_start(struct ifnet *ifp)
 		BPF_MTAP(ifp, m);
 
 		/* do some statistics */
+
 		if_inc_counter(ifp, IFCOUNTER_OBYTES, m->m_pkthdr.len);
 		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 
@@ -353,6 +355,7 @@ vether_start(struct ifnet *ifp)
 			/* demultiplex any other frame */
 
 			m->m_pkthdr.rcvif = ifp;
+
 
 			(*ifp->if_input)(ifp, m);
 		} else
