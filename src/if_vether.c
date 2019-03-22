@@ -71,8 +71,8 @@ __FBSDID("$FreeBSD$");
 
 #define vether_lla_equal(ifa, lla) (	\
     (vether_sdl(ifa)->sdl_type == IFT_ETHER) && \
-    (vether_sdl(ifa)->sdl_alen == sizeof(lla)) && \
-    (bcmp(vether_lla(ifa), lla, sizeof(lla)) == 0))
+    (vether_sdl(ifa)->sdl_alen == ETHER_ADDR_LEN) && \
+    (bcmp(vether_lla(ifa), lla, ETHER_ADDR_LEN) == 0))
 
 struct vether_softc {
 	struct ifmedia	sc_ifm;		/* fake media information */
@@ -146,8 +146,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
 	struct ifnet *ifp, *iter;
-	/* XXX TODO: Use if_ethersubr to generate */
-	uint8_t lla[ETHER_ADDR_LEN];
+	struct ether_addr eaddr;
 
 	/* Allocate software context. */
 	sc = malloc(sizeof(struct vether_softc), M_DEVBUF,
@@ -175,13 +174,16 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
 
 	/* create random LLA and initialize */
-	lla[0] = 0x42;	/* 2nd bit denotes locally administered addr */
-	lla[1] = 0x53;
 again:
+#if __FreeBSD_version >= 1300000
+	ether_fakeaddr(&eaddr);
+#else
+	eaddr.octet[0] = 0x42;	/* 2nd bit denotes locally administered addr */
+	eaddr.octet[1] = 0x53;
 
 	/* map randomized postfix on LLA */
-	arc4rand(&lla[2], sizeof(uint32_t), 0);
-
+	arc4rand(&eaddr.octet[2], sizeof(uint32_t), 0);
+#endif
 #if __FreeBSD_version >= 1300000
 	IFNET_RLOCK();
 #else
@@ -195,7 +197,7 @@ again:
 		if (iter->if_type != IFT_ETHER)
 			continue;
 
-		if (vether_lla_equal(iter->if_addr, lla)) {
+		if (vether_lla_equal(iter->if_addr, eaddr.octet)) {
 #if __FreeBSD_version >= 1300000
 				IFNET_RLOCK();
 #else
@@ -210,7 +212,7 @@ again:
 	IFNET_RUNLOCK_NOSLEEP();
 #endif
 
-	ether_ifattach(ifp, lla);
+	ether_ifattach(ifp, eaddr.octet);
 
 	ifp->if_baudrate = 0;
 
