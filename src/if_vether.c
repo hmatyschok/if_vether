@@ -176,10 +176,10 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	/* create random LLA and initialize */
 again:
 #if __FreeBSD_version >= 1300000
-	ether_fakeaddr(&eaddr);
+	ether_gen_addr(ifp, &eaddr);
 #else
-	eaddr.octet[0] = 0x42;	/* 2nd bit denotes locally administered addr */
-	eaddr.octet[1] = 0x53;
+	eaddr.octet[0] = 'b';	/* 2nd bit denotes locally administered addr */
+	eaddr.octet[1] = 's';
 
 	/* map randomized postfix on LLA */
 	arc4rand(&eaddr.octet[2], sizeof(uint32_t), 0);
