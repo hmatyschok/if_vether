@@ -145,7 +145,7 @@ static int
 vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 {
 	struct vether_softc *sc;
-	struct ifnet *ifp, *iter;
+	struct ifnet *ifp;
 	struct ether_addr eaddr;
 
 	/* Allocate software context. */
@@ -173,45 +173,7 @@ vether_clone_create(struct if_clone *ifc, int unit, caddr_t data)
 	ifmedia_add(&sc->sc_ifm, VETHER_IFM_FLAGS, 0, NULL);
 	ifmedia_set(&sc->sc_ifm, VETHER_IFM_FLAGS);
 
-	/* create random LLA and initialize */
-again:
-#if __FreeBSD_version >= 1300000
 	ether_gen_addr(ifp, &eaddr);
-#else
-	eaddr.octet[0] = 'b';	/* 2nd bit denotes locally administered addr */
-	eaddr.octet[1] = 's';
-
-	/* map randomized postfix on LLA */
-	arc4rand(&eaddr.octet[2], sizeof(uint32_t), 0);
-#endif
-#if __FreeBSD_version >= 1300000
-	IFNET_RLOCK();
-#else
-	IFNET_RLOCK_NOSLEEP();
-#endif
-#if __FreeBSD_version >= 1200064
-	CK_STAILQ_FOREACH(iter, &V_ifnet, if_link) {
-#else
-	TAILQ_FOREACH(iter, &V_ifnet, if_link) {
-#endif
-		if (iter->if_type != IFT_ETHER)
-			continue;
-
-		if (vether_lla_equal(iter->if_addr, eaddr.octet)) {
-#if __FreeBSD_version >= 1300000
-				IFNET_RLOCK();
-#else
-				IFNET_RLOCK_NOSLEEP();
-#endif
-			goto again;
-		}
-	}
-#if __FreeBSD_version >= 1300000
-	IFNET_RUNLOCK();
-#else
-	IFNET_RUNLOCK_NOSLEEP();
-#endif
-
 	ether_ifattach(ifp, eaddr.octet);
 
 	ifp->if_baudrate = 0;
